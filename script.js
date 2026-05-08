@@ -21,7 +21,7 @@ function renderTasks(){
       <span>${task.text}</span>
 
       <div>
-        <button class="check-btn" onclick="toggleTask(${index})">✔</button>
+        <button class="check-btn ${task.completed ? 'done' : ''}" onclick="toggleTask(${index})">✔</button>
 
         <button class="delete-btn" onclick="deleteTask(${index})">🗑</button>
       </div>
