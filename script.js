@@ -1,4 +1,32 @@
+let streak = localStorage.getItem("streak") || 0;
+let lastCompletedDate = localStorage.getItem("lastCompletedDate") || "";
 let tasks = JSON.parse(localStorage.getItem("tasks")) || [];
+
+function updateStreak(){
+
+  const today = new Date().toLocaleDateString();
+
+  if(lastCompletedDate !== today){
+
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+
+    const yesterdayString = yesterday.toLocaleDateString();
+
+    if(lastCompletedDate === yesterdayString){
+      streak++;
+    }else{
+      streak = 1;
+    }
+
+    lastCompletedDate = today;
+
+    localStorage.setItem("streak", streak);
+    localStorage.setItem("lastCompletedDate", today);
+  }
+
+  document.getElementById("streak").innerText = streak;
+}
 
 function saveTasks(){
   localStorage.setItem("tasks", JSON.stringify(tasks));
@@ -57,6 +85,8 @@ function toggleTask(index){
 
   if(tasks[index].completed){
 
+    updateStreak();
+
     confetti({
       particleCount:100,
       spread:70,
@@ -87,6 +117,8 @@ function updateProgress(){
   document.getElementById("progressBar").style.width = percent + "%";
 
   document.getElementById("progressText").innerText = `${percent}% concluído`;
+
+  document.getElementById("streak").innerText = streak;
 }
 
 renderTasks();
