@@ -122,6 +122,19 @@ create table if not exists public.goals (
   created_at timestamptz not null default now()
 );
 
+-- Histórico de "Começar agora" (consegui / fiz um pouco / não deu) -----
+create table if not exists public.focus_sessions (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
+  date date not null,
+  habit_id uuid references public.habits(id) on delete set null,
+  minutes integer not null default 0,
+  outcome text not null check (outcome in ('done', 'partial', 'not')),
+  mini boolean not null default false,
+  started_at timestamptz,
+  created_at timestamptz not null default now()
+);
+
 -- Dias salvos por um protetor de sequência ----------------------------
 create table if not exists public.streak_freezes (
   id uuid primary key default gen_random_uuid(),
@@ -160,6 +173,7 @@ alter table public.streak_freezes      enable row level security;
 alter table public.achievements        enable row level security;
 alter table public.journal_entries     enable row level security;
 alter table public.goals               enable row level security;
+alter table public.focus_sessions      enable row level security;
 
 drop policy if exists "own profile" on public.profiles;
 create policy "own profile" on public.profiles
@@ -170,7 +184,7 @@ declare t text;
 begin
   foreach t in array array['habits','habit_logs','tasks','mood_checkins','impulse_logs',
                            'meditation_sessions','streak_freezes','achievements',
-                           'journal_entries','goals']
+                           'journal_entries','goals','focus_sessions']
   loop
     execute format('drop policy if exists "own rows" on public.%I', t);
     execute format('create policy "own rows" on public.%I for all

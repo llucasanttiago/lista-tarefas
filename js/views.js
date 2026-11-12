@@ -93,7 +93,7 @@
       </div>`;
   }
 
-  function habitItem(h, t) {
+  function habitItem(h, t, compact = false) {
     const done = G.isDone(h.id, t);
     const wc = G.weekCount(h.id, t);
     const start = U.weekStart(t);
@@ -103,11 +103,11 @@
     }).join('');
     const hit = wc >= h.target_per_week;
     return `
-      <div class="habit ${done ? 'done' : ''}" data-action="toggle-habit" data-id="${h.id}">
+      <div class="habit ${done ? 'done' : ''} ${compact ? 'compact' : ''}" data-action="toggle-habit" data-id="${h.id}">
         <div class="habit-icon">${esc(h.icon)}</div>
         <div class="habit-body">
           <div class="habit-name">${esc(h.name)}</div>
-          <div class="habit-week"><span class="dots">${dots}</span><span class="${hit ? 'hit' : 'muted'}">${wc}/${h.target_per_week}${hit ? ' 🎯' : ''}</span></div>
+          ${compact ? '' : `<div class="habit-week"><span class="dots">${dots}</span><span class="${hit ? 'hit' : 'muted'}">${wc}/${h.target_per_week}${hit ? ' 🎯' : ''}</span></div>`}
         </div>
         <button class="check" aria-label="Concluir ${esc(h.name)}">${ICONS.check}</button>
       </div>`;
@@ -254,54 +254,144 @@
     if (isNew) setTimeout(() => $('#gTitle').focus(), 250);
   }
 
-  function hoje() {
+  // ------------------------------------------------------------------ HOJE (foco em UMA coisa)
+  const ui = { dayOpen: U.store.get('raiz-day-open', '0') === '1', progTab: 'resumo' };
+
+  function focusCard() {
+    const st = F.state();
+    const hard = G.isHardMode();
+    const hardLink = `<button class="link-btn center-link" data-action="hard-mode">${hard ? '🌧️ Modo dia difícil ativo · desativar' : '🌧️ Dia difícil? Mostrar só o essencial'}</button>`;
+
+    if (st.type === 'active') {
+      const h = S.habits.find(x => x.id === st.active.habitId);
+      const mins = Math.max(0, Math.round((Date.now() - st.active.started) / 60000));
+      return `
+        <div class="focus-card active">
+          <p class="eyebrow">Você está fazendo agora</p>
+          <div class="focus-ic xl breathe">${esc(h.icon)}</div>
+          <h2 class="focus-title">${esc(h.name)}</h2>
+          <p class="muted">${st.active.mini ? 'Versão mini. ' : ''}Começou ${mins < 1 ? 'agora há pouco' : `há ${mins} min`}. Foque só nisso. Quando terminar, volte e me conte como foi.</p>
+          <button class="btn primary block big" data-action="focus-return">Voltei! Contar como foi</button>
+          <button class="link-btn center-link" data-action="focus-cancel">Cancelar</button>
+        </div>`;
+    }
+    if (st.type === 'suggest') {
+      const h = st.habit;
+      const mins = F.minutes(h);
+      return `
+        <div class="focus-card">
+          <p class="eyebrow">Sugestão para agora</p>
+          <div class="focus-ic xl">${esc(h.icon)}</div>
+          <h2 class="focus-title">${esc(h.name)}</h2>
+          <p class="muted focus-why">${esc(F.why(h))}${mins ? ` · ⏱️ ${mins} min` : ''}</p>
+          <button class="btn primary block big" data-action="focus-start" data-id="${h.id}">Começar agora</button>
+          <div class="focus-alt">
+            ${st.total > 1 ? `<button class="link-btn" data-action="focus-next">Outra sugestão</button><span>·</span>` : ''}
+            <button class="link-btn" data-action="focus-already" data-id="${h.id}">Já fiz</button>
+          </div>
+        </div>
+        ${hardLink}`;
+    }
+    if (st.type === 'review' || st.type === 'waiting') {
+      const n = st.list.length;
+      return `
+        <div class="focus-card calm">
+          <div class="focus-ic xl">${st.type === 'review' ? '🌙' : '🌿'}</div>
+          <h2 class="focus-title">${st.type === 'review' ? 'Hora de fechar o dia' : 'Tudo de ativo feito!'}</h2>
+          <p class="muted">${st.type === 'review'
+            ? `${n > 1 ? `Faltam ${n} confirmações rápidas` : 'Falta 1 confirmação rápida'} sobre o seu dia. Sem julgamento.`
+            : 'Que orgulho. À noite, volte para confirmar como foi o resto do dia.'}</p>
+          <button class="btn ${st.type === 'review' ? 'primary' : 'soft'} block big" data-action="review-open">${st.type === 'review' ? 'Revisar o dia' : 'Revisar agora'}</button>
+        </div>`;
+    }
+    if (st.type === 'done') {
+      return `
+        <div class="focus-card done">
+          <div class="focus-ic xl">🌟</div>
+          <h2 class="focus-title">Dia completo!</h2>
+          <p class="muted">Você fez tudo o que se propôs hoje. Descanse, você merece. 🤍</p>
+          <button class="btn soft block" data-action="journal-new">Escrever como foi o dia</button>
+        </div>`;
+    }
+    return `
+      <div class="focus-card">
+        <div class="focus-ic xl">🌱</div>
+        <h2 class="focus-title">Vamos começar?</h2>
+        <p class="muted">Crie seu primeiro hábito para eu sugerir o que fazer.</p>
+        <button class="btn primary block big" data-action="habit-new">Criar hábito</button>
+      </div>`;
+  }
+
+  function dayStrip() {
     const t = U.today();
     const habits = G.visibleHabits();
+    if (!habits.length) return '';
     const doneN = habits.filter(h => G.isDone(h.id, t)).length;
-    const pct = habits.length ? doneN / habits.length : 0;
-    const streak = G.streak();
-    const todayActive = G.activeDates().has(t);
-    const hard = G.isHardMode();
-
     return `
-      <header class="page-head">
+      <div class="day-strip ${ui.dayOpen ? 'open' : ''}">
+        <button class="day-toggle" data-action="day-toggle" aria-expanded="${ui.dayOpen}">
+          <span class="ring-wrap sm">${ring(doneN / habits.length, 34, 4)}</span>
+          <span class="day-label"><b>Seu dia</b><small>${doneN} de ${habits.length} hábitos</small></span>
+          <span class="chev">${ui.dayOpen ? '▴' : '▾'}</span>
+        </button>
+        ${ui.dayOpen ? `<div class="habits compact">${habits.map(h => habitItem(h, t, true)).join('')}</div>` : ''}
+      </div>`;
+  }
+
+  function checkinRow() {
+    const t = U.today(), p = period();
+    if (S.moods.some(m => m.date === t && m.period === p)) return '';
+    return `
+      <div class="ci-row">
+        <span>Como você está?</span>
+        <div class="ci-emojis">${MOODS.map(([e, l], i) => `<button data-action="ci-quick" data-v="${i + 1}" title="${l}" aria-label="${l}">${e}</button>`).join('')}</div>
+      </div>`;
+  }
+
+  function hoje() {
+    const t = U.today();
+    const streak = G.streak();
+    const lit = G.activeDates().has(t);
+    const lv = G.level(S.profile.xp);
+    return `
+      <header class="home-head">
         <div>
-          <p class="muted cap">${U.fmtLong(t)}</p>
+          <p class="muted cap small">${U.fmtLong(t)}</p>
           <h1>${greeting()}, ${esc(firstName())}</h1>
         </div>
+        <div class="top-chips">
+          <span class="top-chip ${lit ? 'lit' : ''}" title="Dias seguidos">🔥 ${streak}</span>
+          <span class="top-chip" title="${esc(lv.title)}">Nv ${lv.level}</span>
+        </div>
       </header>
-      ${header()}
+      ${!lit && streak > 0 ? `<p class="nudge soft">Um hábito hoje mantém seus ${streak} ${streak === 1 ? 'dia' : 'dias'} de sequência.</p>` : ''}
+      ${focusCard()}
+      ${dayStrip()}
+      ${checkinRow()}
+      <div class="spacer"></div>`;
+  }
 
-      <div class="stat-row">
-        <div class="stat ${todayActive ? 'lit' : 'cold'}">
-          <span class="stat-ic flame">🔥</span>
-          <div><b>${streak}</b><small>${streak === 1 ? 'dia seguido' : 'dias seguidos'}</small></div>
-        </div>
-        <div class="stat">
-          <span class="stat-ic">🛡️</span>
-          <div><b>${S.profile.freezes}</b><small>protetores</small></div>
-        </div>
-        <div class="stat">
-          <div class="ring-wrap">${ring(pct, 44, 5)}<span>${doneN}/${habits.length}</span></div>
-          <div><b>${Math.round(pct * 100)}%</b><small>do dia</small></div>
-        </div>
-      </div>
-      ${!todayActive && streak > 0 ? `<p class="nudge">⚡ Conclua 1 hábito hoje para manter sua sequência de ${streak} ${streak === 1 ? 'dia' : 'dias'}.</p>` : ''}
+  // ------------------------------------------------------------------ PLANO
+  function plano() {
+    const t = U.today();
+    const habits = G.visibleHabits();
+    const hard = G.isHardMode();
+    return `
+      <header class="page-head"><div><h1>Plano</h1><p class="muted">Seus hábitos, metas e tarefas.</p></div></header>
 
-      <div class="quote">“${esc(PHRASES[dayOfYear() % PHRASES.length])}”</div>
-
-      ${checkinCard()}
-
-      <section>
+      <section class="first">
         <div class="section-head">
-          <h2>Hábitos de hoje</h2>
-          <button class="pill ${hard ? 'on' : ''}" data-action="hard-mode">${hard ? '🌧️ Dia difícil' : '🌧️ Dia difícil?'}</button>
+          <h2>Hábitos</h2>
+          <div class="row gap">
+            <button class="pill ${hard ? 'on' : ''}" data-action="hard-mode">🌧️ ${hard ? 'Dia difícil' : 'Dia difícil?'}</button>
+            <button class="pill" data-action="habit-new" aria-label="Novo hábito">${ICONS.plus}</button>
+          </div>
         </div>
-        ${hard ? `<p class="hard-note">Tudo bem ter dias assim. Hoje, só o essencial. Fazer o mínimo já mantém sua sequência. 🤍</p>` : ''}
+        ${hard ? `<p class="hard-note">Hoje, só o essencial. Fazer o mínimo já mantém sua sequência. 🤍</p>` : ''}
         <div class="habits">
-          ${habits.length ? habits.map(h => habitItem(h, t)).join('') : `<p class="empty">Nenhum hábito. Crie em Perfil → Meus hábitos.</p>`}
+          ${habits.length ? habits.map(h => habitItem(h, t)).join('') : `<p class="empty">Nenhum hábito ainda.</p>`}
         </div>
-        ${doneN === habits.length && habits.length ? `<div class="all-done">🌟 Todos os hábitos de hoje feitos. Que orgulho!</div>` : ''}
+        <p class="muted small hint">Para editar ou reordenar: Perfil → Meus hábitos.</p>
       </section>
 
       <section>
@@ -321,6 +411,29 @@
         <div class="tasks">${taskList(t)}</div>
       </section>
       <div class="spacer"></div>`;
+  }
+
+  // Check-in em folha: humor já escolhido, falta a ansiedade
+  function checkinSheet(mood) {
+    const st = { anxiety: 5 };
+    const m = U.modal(`
+      <div class="ci-sheet">
+        <div class="big-emoji xl center">${MOODS[mood - 1][0]}</div>
+        <p class="muted center">${MOODS[mood - 1][1]}</p>
+        <label class="field">
+          <span>E a ansiedade agora? <b id="csVal">5</b>/10</span>
+          <input type="range" min="0" max="10" value="5" id="csAnx" class="anx-range">
+        </label>
+        <input class="input" id="csNote" maxlength="200" placeholder="Quer anotar algo? (opcional)">
+        <button class="btn primary block" id="csSave" style="margin-top:14px">Salvar</button>
+      </div>`, { cls: 'small' });
+    const $ = s => m.el.querySelector(s);
+    $('#csAnx').oninput = e => { st.anxiety = +e.target.value; $('#csVal').textContent = e.target.value; };
+    $('#csSave').onclick = async () => {
+      $('#csSave').disabled = true;
+      const ok = await App.saveCheckin({ mood, anxiety: st.anxiety, note: $('#csNote').value });
+      if (ok) m.close(); else $('#csSave').disabled = false;
+    };
   }
 
   // ------------------------------------------------------------------ MEDITAR
@@ -514,9 +627,20 @@
 
   function progresso() {
     const s = G.stats();
+    const got = G.ACH.filter(a => S.achievements.has(a.code)).length;
+    const seg = `
+      <div class="seg tabs" role="tablist">
+        <button class="${ui.progTab === 'resumo' ? 'on' : ''}" data-action="prog-tab" data-v="resumo">📈 Resumo</button>
+        <button class="${ui.progTab === 'conquistas' ? 'on' : ''}" data-action="prog-tab" data-v="conquistas">🏆 Conquistas · ${got}</button>
+      </div>`;
+    if (ui.progTab === 'conquistas') {
+      return `<header class="page-head"><div><h1>Progresso</h1><p class="muted">${got} de ${G.ACH.length} conquistas desbloqueadas</p></div></header>${seg}${conquistas(true)}`;
+    }
     return `
       <header class="page-head"><div><h1>Progresso</h1><p class="muted">Cada quadradinho é uma vitória sua.</p></div></header>
-      <div class="tiles">
+      ${seg}
+      ${header()}
+      <div class="tiles" style="margin-top:14px">
         <div class="tile"><span>🔥</span><b>${G.streak()}</b><small>sequência atual</small></div>
         <div class="tile"><span>🏅</span><b>${s.best}</b><small>melhor sequência</small></div>
         <div class="tile"><span>✅</span><b>${s.habitTotal}</b><small>hábitos feitos</small></div>
@@ -533,7 +657,7 @@
   }
 
   // ------------------------------------------------------------------ CONQUISTAS
-  function conquistas() {
+  function conquistas(embedded = false) {
     const lv = G.level(S.profile.xp);
     const got = G.ACH.filter(a => S.achievements.has(a.code)).length;
     const path = Array.from({ length: 11 }, (_, i) => i + 1).map(n => `
@@ -541,7 +665,7 @@
         <span>${n}</span><small>${esc(G.title(n))}</small>
       </div>`).join('');
     return `
-      <header class="page-head"><div><h1>Conquistas</h1><p class="muted">${got} de ${G.ACH.length} desbloqueadas</p></div></header>
+      ${embedded ? '' : `<header class="page-head"><div><h1>Conquistas</h1><p class="muted">${got} de ${G.ACH.length} desbloqueadas</p></div></header>`}
       ${header()}
       <div class="level-path">${path}</div>
       <div class="ach-grid">
@@ -710,5 +834,5 @@
     };
   }
 
-  window.V = { hoje, meditar, progresso, conquistas, perfil, header, habitEditor, goalEditor, ci, med, period };
+  window.V = { hoje, plano, checkinSheet, ui, meditar, progresso, conquistas, perfil, header, habitEditor, goalEditor, ci, med, period };
 })();

@@ -5,6 +5,9 @@ Os dados ficam salvos no Supabase, com login e senha. Funciona no PC e no celula
 
 ## O que tem
 
+- **Tela inicial focada**: mostra só UMA sugestão do que fazer agora. Você toca em "Começar", recebe uma mensagem para focar e, ao voltar, conta como foi (consegui / fiz só um pouco / não deu). Toda resposta é recebida com acolhimento
+- **À noite, "Fechar o dia"**: confirma os hábitos de evitar e manter (gatilhos, sono…) sem julgamento
+- **Menus**: Hoje · Plano (hábitos, metas, tarefas) · Mente · Progresso (com conquistas) · Perfil
 - **Hábitos diários** com meta semanal (ex.: malhar 4x por semana) e bolinhas da semana
 - **Sequência de dias** 🔥 com **protetores** 🛡️: a cada 7 dias seguidos você ganha 1, e ele salva sua sequência se você falhar um dia
 - **XP, níveis e 28 conquistas**, de Semente até Floresta

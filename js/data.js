@@ -114,8 +114,9 @@
         this.fetchAll('meditation_sessions'),
         this.fetchAll('streak_freezes', 'date'),
         this.fetchAll('achievements', 'unlocked_at'),
-        this.fetchAll('journal_entries'),
-        this.fetchAll('goals', 'position')
+        // tabelas mais novas: se ainda não existirem, o app abre mesmo assim
+        this.fetchAll('journal_entries').catch(e => { console.warn('journal_entries:', e.message); return []; }),
+        this.fetchAll('goals', 'position').catch(e => { console.warn('goals:', e.message); return []; })
       ]);
       S.journal = journal;
       S.goals = goals;

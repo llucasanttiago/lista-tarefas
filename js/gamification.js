@@ -202,7 +202,7 @@
         U.toast(`<span class="toast-ach">${a.icon}</span><div><b>Conquista desbloqueada!</b><br>${U.esc(a.title)}</div>`, 'achievement');
       }, 700 + i * 1600));
       await G.addXp(XP.achievement * fresh.length);
-      if (S.tab === 'conquistas') App.render();
+      if (S.tab === 'progresso') App.render();
     }
   };
 

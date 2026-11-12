@@ -200,27 +200,28 @@
     },
 
     // ---------------------------------------------------------------- Check-in
-    async saveCheckin() {
-      const ci = V.ci;
-      if (!ci.mood) return;
+    async saveCheckin({ mood, anxiety, note = '' }) {
+      if (!mood) return false;
       const t = U.today(), period = V.period();
       const existed = S.moods.some(m => m.date === t && m.period === period);
-      const note = ($('#ciNote') || {}).value || '';
       try {
         const row = await DB.upsert('mood_checkins', {
-          user_id: S.user.id, date: t, period, mood: ci.mood, anxiety: ci.anxiety, note: note.trim() || null
+          user_id: S.user.id, date: t, period, mood, anxiety, note: note.trim() || null
         }, 'user_id,date,period');
         S.moods = S.moods.filter(m => !(m.date === t && m.period === period));
         S.moods.push(row);
-      } catch (e) { console.error(e); U.toast('Erro ao salvar check-in.', 'error'); return; }
-      const highAnxiety = ci.anxiety >= 7;
-      ci.editing = false; ci.mood = null; ci.anxiety = 5;
+      } catch (e) { console.error(e); U.toast('Erro ao salvar check-in.', 'error'); return false; }
       U.play('task');
-      U.toast(highAnxiety
-        ? 'Ansiedade alta registrada. Que tal uma <b>respiração 4-7-8</b> na aba Mente? 🌬️'
-        : 'Check-in salvo. Se conhecer é o primeiro passo. 💭', 'success');
+      if (anxiety >= 7) {
+        U.toast('Ansiedade alta. Quer fazer uma <b>respiração 4-7-8</b> de 1 minuto agora? Está na aba Mente. 🌬️', 'success');
+      } else if (mood <= 2) {
+        U.toast('Obrigado por contar. Dias pesados passam. Vá no seu ritmo hoje. 🤍', 'success');
+      } else {
+        U.toast('Check-in salvo. Se conhecer é o primeiro passo. 💭', 'success');
+      }
       App.render();
       if (!existed) { await G.addXp(G.XP.checkin); await G.checkAchievements(); }
+      return true;
     },
 
     async toggleHardMode() {
@@ -255,8 +256,8 @@
         $('#authMsg').textContent = 'Erro ao carregar seus dados: ' + (e.message || e) + '. Você rodou o arquivo supabase/schema.sql no Supabase?';
         return;
       }
-      const saved = U.store.get('raiz-tab', 'hoje');
-      S.tab = V[saved] ? saved : 'hoje';
+      // Sempre abre em "Hoje": a coisa mais importante primeiro
+      S.tab = 'hoje';
       show('#app');
       if (Lock.enabled() && !recovery.pending) Lock.show();
       App.render();
@@ -266,7 +267,14 @@
       if (best !== S.profile.best_streak) DB.updateProfile({ best_streak: best }).catch(console.error);
       await App.checkGoalMilestones();
       App.render();
-      G.checkAchievements();
+      await G.checkAchievements();
+      App.askFocusReturn();
+    },
+
+    // Se você saiu para fazer algo e voltou, pergunta como foi
+    askFocusReturn() {
+      const a = F.get();
+      if (a && a.date === U.today() && Date.now() - a.started > 2 * 60000) setTimeout(() => F.openReturn(), 600);
     }
   };
   window.App = App;
@@ -422,14 +430,19 @@
         case 'toggle-task': App.toggleTask(id, a); break;
         case 'del-task': App.deleteTask(id); break;
         case 'hard-mode': App.toggleHardMode(); break;
-        case 'ci-mood':
-          V.ci.mood = +v;
-          view.querySelectorAll('.mood').forEach(m => m.classList.toggle('on', m === a));
-          view.querySelector('[data-action="ci-save"]').disabled = false;
-          U.vibrate(8);
+        case 'ci-quick': U.vibrate(8); V.checkinSheet(+v); break;
+        case 'focus-start': F.start(id); break;
+        case 'focus-next': F.next(); break;
+        case 'focus-already': App.toggleHabit(id, a.closest('.focus-card')); break;
+        case 'focus-return': F.openReturn(); break;
+        case 'focus-cancel': F.cancel(); break;
+        case 'review-open': F.openReview(); break;
+        case 'day-toggle':
+          V.ui.dayOpen = !V.ui.dayOpen;
+          U.store.set('raiz-day-open', V.ui.dayOpen ? '1' : '0');
+          App.render();
           break;
-        case 'ci-save': App.saveCheckin(); break;
-        case 'ci-edit': V.ci.editing = true; App.render(); break;
+        case 'prog-tab': V.ui.progTab = v; App.render(); window.scrollTo(0, 0); break;
         case 'med-mode': V.med.mode = v; App.render(); break;
         case 'med-min': V.med.minutes = +v; U.store.set('raiz-med-min', v); App.render(); break;
         case 'journal-new': X.openJournal(); break;
@@ -484,6 +497,7 @@
       if (document.hidden) { hiddenAt = Date.now(); return; }
       if (!S.profile) return;
       if (Lock.enabled() && hiddenAt && Date.now() - hiddenAt > 60000) Lock.show();
+      App.askFocusReturn();
       if (U.today() !== lastDay) {
         lastDay = U.today();
         await G.applyFreezes();
