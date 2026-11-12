@@ -38,6 +38,9 @@
     { code: 'free_30', icon: '🦅', title: 'Um mês livre', desc: '30 dias seguidos em uma meta de "dias livre"', test: s => s.freeDays >= 30 },
     { code: 'free_90', icon: '🌅', title: 'Nova vida', desc: '90 dias seguidos em uma meta de "dias livre"', test: s => s.freeDays >= 90 },
     { code: 'goal_done', icon: '🏁', title: 'Meta cumprida', desc: 'Completou uma meta numérica', test: s => s.goalsDone >= 1 },
+    { code: 'plan_1', icon: '🗺️', title: 'Preparado', desc: 'Montou seu plano anti-impulso', test: s => s.plans >= 1 },
+    { code: 'review_1', icon: '📅', title: 'Olhando para trás', desc: 'Fez sua primeira revisão da semana', test: s => s.reviews >= 1 },
+    { code: 'review_4', icon: '🗓️', title: 'Um mês de revisões', desc: '4 revisões da semana', test: s => s.reviews >= 4 },
     { code: 'grounding', icon: '🖐️', title: 'Pés no chão', desc: 'Fez o exercício de aterramento 5-4-3-2-1', test: s => s.grounding },
     { code: 'checkin_7', icon: '💭', title: 'Autoconhecimento', desc: '7 check-ins de humor', test: s => s.checkins >= 7 },
     { code: 'checkin_30', icon: '📔', title: 'Diário da mente', desc: '30 check-ins de humor', test: s => s.checkins >= 30 },
@@ -115,6 +118,8 @@
         journal: S.journal.length,
         freeDays: Math.max(0, ...S.goals.filter(g => g.kind === 'days' && !g.archived).map(g => Math.max(g.best || 0, G.goalDays(g)))),
         goalsDone: S.goals.filter(g => g.kind === 'count' && g.completed_at).length,
+        plans: (S.profile.if_then || []).length,
+        reviews: (S.reviews || []).length,
         hardDay: S.flags.hardDay,
         grounding: S.flags.grounding,
         level: lv.level

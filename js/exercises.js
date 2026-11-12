@@ -67,6 +67,7 @@
           <h2>Tudo bem. Você está no controle.</h2>
           <p class="muted">Um impulso é como uma onda: ele sobe, atinge o pico e passa. Normalmente em poucos minutos. Você não precisa obedecer, só precisa surfar.</p>
         </div>
+        ${P.impulseBlock()}
         <label class="field">
           <span>Qual é o impulso? <em class="muted">(opcional)</em></span>
           <input class="input" id="impKind" list="impKinds" maxlength="60" placeholder="ex.: celular, doce, comprar, cigarro…" autocomplete="off">

@@ -280,7 +280,7 @@
       const mins = F.minutes(h);
       return `
         <div class="focus-card">
-          <p class="eyebrow">Sugestão para agora</p>
+          <p class="eyebrow">${h.id === P.weeklyFocusId() ? '🎯 Foco da semana' : 'Sugestão para agora'}</p>
           <div class="focus-ic xl">${esc(h.icon)}</div>
           <h2 class="focus-title">${esc(h.name)}</h2>
           <p class="muted focus-why">${esc(F.why(h))}${mins ? ` · ⏱️ ${mins} min` : ''}</p>
@@ -364,6 +364,8 @@
           <span class="top-chip" title="${esc(lv.title)}">Nv ${lv.level}</span>
         </div>
       </header>
+      ${P.reviewBanner()}
+      ${P.riskBanner()}
       ${!lit && streak > 0 ? `<p class="nudge soft">Um hábito hoje mantém seus ${streak} ${streak === 1 ? 'dia' : 'dias'} de sequência.</p>` : ''}
       ${focusCard()}
       ${dayStrip()}
@@ -481,6 +483,15 @@
         <p class="muted small">Até 10 minutos escrevendo o que está sentindo. Tira força dos impulsos e organiza a cabeça. Tem perguntas para te guiar.</p>
         <button class="btn soft block" data-action="journal-new" style="margin-top:12px">Escrever agora</button>
         ${journalList()}
+      </div>
+
+      <div class="card plan-card">
+        <div class="section-head"><h3>🛡️ Meu plano anti-impulso</h3></div>
+        ${P.plans().length || P.reasons().length
+          ? `<p class="muted small">${P.reasons().length} ${P.reasons().length === 1 ? 'motivo' : 'motivos'} · ${P.plans().length} ${P.plans().length === 1 ? 'plano' : 'planos'} "Se… então…". Aparece sozinho quando você aperta 🌊 Impulso.</p>
+             <div class="row gap" style="margin-top:12px"><button class="btn soft" data-action="plan-show">Ver</button><button class="btn ghost" data-action="plan-edit">Editar</button></div>`
+          : `<p class="muted small">Escreva agora, com calma, seus motivos e o que fazer quando a vontade bater. Na hora do impulso, o app mostra isso para você.</p>
+             <button class="btn primary block" data-action="plan-edit" style="margin-top:12px">Montar meu plano</button>`}
       </div>
 
       <h2 class="h2-space">Socorro rápido para ansiedade</h2>
@@ -653,6 +664,7 @@
       <div class="card"><h3>O que te ajuda</h3>${insights()}</div>
       <div class="card"><h3>Hábitos · últimas 4 semanas</h3>${habitRates()}</div>
       <div class="card"><h3>Impulsos · 30 dias</h3>${impulseBlock()}</div>
+      <div class="card"><h3>Quando os impulsos aparecem</h3>${P.riskCard()}</div>
       <div class="spacer"></div>`;
   }
 
@@ -723,6 +735,8 @@
           <li>🤖 <b>Automático:</b> meditar, escrever ou resistir a um impulso já marcam o hábito correspondente.</li>
         </ul>
       </div>
+
+      ${P.remindersCard()}
 
       <div class="card">
         <h3>🔒 Privacidade</h3>

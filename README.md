@@ -7,6 +7,10 @@ Os dados ficam salvos no Supabase, com login e senha. Funciona no PC e no celula
 
 - **Tela inicial focada**: mostra só UMA sugestão do que fazer agora. Você toca em "Começar", recebe uma mensagem para focar e, ao voltar, conta como foi (consegui / fiz só um pouco / não deu). Toda resposta é recebida com acolhimento
 - **À noite, "Fechar o dia"**: confirma os hábitos de evitar e manter (gatilhos, sono…) sem julgamento
+- **Plano anti-impulso**: seus motivos e planos "Se… então…", mostrados automaticamente quando você aperta 🌊 Impulso
+- **Mapa de risco**: em que horários e dias os impulsos aparecem; nesse horário a tela Hoje mostra seu plano
+- **Revisão da semana** (domingo a terça): resumo, o que deu certo e UM foco para a semana seguinte
+- **Lembretes** no celular: bom dia, fechar o dia, horário de risco e "como foi?" (textos sempre genéricos)
 - **Menus**: Hoje · Plano (hábitos, metas, tarefas) · Mente · Progresso (com conquistas) · Perfil
 - **Hábitos diários** com meta semanal (ex.: malhar 4x por semana) e bolinhas da semana
 - **Sequência de dias** 🔥 com **protetores** 🛡️: a cada 7 dias seguidos você ganha 1, e ele salva sua sequência se você falhar um dia
@@ -51,6 +55,16 @@ Sem isso, os links dos emails abrem uma página errada.
 ### 4. Fechar o cadastro (privacidade)
 Depois de criar a sua conta, vá em **Authentication → Sign In / Providers** e desligue **Allow new users to sign up**.
 Assim ninguém mais consegue criar conta no seu app. Mesmo com o cadastro aberto, ninguém veria seus dados, mas fechar é mais seguro.
+
+### 5. Lembretes no celular (opcional)
+As chaves ficam no arquivo local `.secrets/lembretes.txt`, que **não** vai para o GitHub.
+
+1. **Edge Functions → Deploy a new function → Via Editor.** Nome: `lembretes`. Apague o código de exemplo, cole todo o [`supabase/functions/lembretes/index.ts`](supabase/functions/lembretes/index.ts) e clique em **Deploy**.
+2. Abra a função `lembretes` → **Details / Settings** e **desligue "Verify JWT"** (Enforce JWT verification). Sem isso, o agendamento não consegue chamar a função.
+3. **Edge Functions → Secrets:** adicione as 3 chaves do arquivo `.secrets/lembretes.txt` (`VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `CRON_SECRET`).
+4. **SQL Editor:** rode o bloco "SQL para agendar" do mesmo arquivo. Ele chama a função a cada 5 minutos.
+5. No celular, abra o app pelo endereço do GitHub Pages e vá em **Perfil → Lembretes → Ativar**. Depois toque em **Enviar teste**.
+   No iPhone, primeiro instale o app: **Compartilhar → Adicionar à Tela de Início**.
 
 > Se você atualizar o app e ele pedir, rode o `supabase/schema.sql` de novo. Pode rodar quantas vezes quiser: ele não apaga nada.
 

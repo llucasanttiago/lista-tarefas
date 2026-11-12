@@ -266,6 +266,8 @@
       const best = Math.max(S.profile.best_streak || 0, G.streak());
       if (best !== S.profile.best_streak) DB.updateProfile({ best_streak: best }).catch(console.error);
       await App.checkGoalMilestones();
+      await P.refreshPushState();
+      P.syncRiskHour();
       App.render();
       await G.checkAchievements();
       App.askFocusReturn();
@@ -437,6 +439,12 @@
         case 'focus-return': F.openReturn(); break;
         case 'focus-cancel': F.cancel(); break;
         case 'review-open': F.openReview(); break;
+        case 'plan-show': P.openPlan(); break;
+        case 'plan-edit': P.editPlan(); break;
+        case 'review-week': P.openReview(); break;
+        case 'push-on': P.enablePush(); break;
+        case 'push-off': if (confirm('Desativar os lembretes neste aparelho?')) P.disablePush(); break;
+        case 'push-test': P.testPush(); break;
         case 'day-toggle':
           V.ui.dayOpen = !V.ui.dayOpen;
           U.store.set('raiz-day-open', V.ui.dayOpen ? '1' : '0');
@@ -476,6 +484,8 @@
     });
     view.addEventListener('change', e => {
       if (e.target.id === 'soundToggle') U.store.set('raiz-sound', e.target.checked ? 'on' : 'off');
+      if (e.target.dataset.rem) P.saveReminder({ [e.target.dataset.rem]: e.target.value || null });
+      if (e.target.dataset.remB) P.saveReminder({ [e.target.dataset.remB]: e.target.checked });
       if (e.target.id === 'pinToggle') {
         if (e.target.checked) Lock.setup(ok => { if (!ok) App.render(); });
         else if (confirm('Desativar o PIN neste aparelho?')) { Lock.disable(); U.toast('PIN desativado.', 'info'); }

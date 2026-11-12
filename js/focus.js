@@ -41,6 +41,7 @@
       const score = h => {
         let s = 0;
         if (h.essential) s += 3;
+        if (h.id === P.weeklyFocusId()) s += 4;
         if (hr < 12 && /medit|mindful|camin|exerc|trein|sol|along/i.test(h.name)) s += 2;
         if (hr >= 18 && /escrita|di[áa]rio|ler\b|leitura|gratid/i.test(h.name)) s += 2;
         if (G.weekCount(h.id, t) < h.target_per_week * dayIdx / 7) s += 1;
@@ -98,6 +99,7 @@
         </div>`, { cls: 'small' });
       m.el.querySelector('#fGo').onclick = () => {
         F.set({ habitId: id, started: Date.now(), date: U.today(), mini });
+        P.scheduleFocusReminder(mini ? 5 : (mins || 30));
         m.close();
         U.play('soft'); U.vibrate(15);
         U.toast('Vai lá! Estou te esperando aqui. 🤍', 'info');
@@ -108,7 +110,7 @@
 
     cancel() {
       if (!confirm('Cancelar esta atividade? Tudo bem, você pode começar de novo quando quiser.')) return;
-      F.set(null); App.render();
+      F.set(null); P.clearFocusReminder(); App.render();
     },
 
     // ---------------------------------------------------------------- Voltei
@@ -142,6 +144,7 @@
       const body = m.el.querySelector('#fBody');
       body.innerHTML = '<div class="center pad"><div class="spinner"></div></div>';
       F.set(null);
+      P.clearFocusReminder();
       // histórico (se a tabela ainda não existir, segue sem quebrar)
       DB.insert('focus_sessions', {
         user_id: S.user.id, date: U.today(), habit_id: h.id, minutes: mins,

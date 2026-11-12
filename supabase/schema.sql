@@ -135,6 +135,38 @@ create table if not exists public.focus_sessions (
   created_at timestamptz not null default now()
 );
 
+-- Plano anti-impulso, motivos, lembretes e foco da semana (no perfil) --
+alter table public.profiles add column if not exists reasons text[] not null default '{}';
+alter table public.profiles add column if not exists if_then jsonb not null default '[]';
+alter table public.profiles add column if not exists reminders jsonb;
+alter table public.profiles add column if not exists reminders_sent jsonb not null default '{}';
+alter table public.profiles add column if not exists focus_reminder_at timestamptz;
+alter table public.profiles add column if not exists weekly_focus_habit uuid;
+alter table public.profiles add column if not exists weekly_focus_week date;
+
+-- Aparelhos que recebem lembretes (notificações) ----------------------
+create table if not exists public.push_subscriptions (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
+  endpoint text not null unique,
+  p256dh text not null,
+  auth text not null,
+  user_agent text,
+  created_at timestamptz not null default now()
+);
+
+-- Revisão da semana -----------------------------------------------------
+create table if not exists public.weekly_reviews (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
+  week_start date not null,
+  summary jsonb not null default '{}',
+  went_well text,
+  focus_habit_id uuid references public.habits(id) on delete set null,
+  created_at timestamptz not null default now(),
+  unique (user_id, week_start)
+);
+
 -- Dias salvos por um protetor de sequência ----------------------------
 create table if not exists public.streak_freezes (
   id uuid primary key default gen_random_uuid(),
@@ -174,6 +206,8 @@ alter table public.achievements        enable row level security;
 alter table public.journal_entries     enable row level security;
 alter table public.goals               enable row level security;
 alter table public.focus_sessions      enable row level security;
+alter table public.push_subscriptions  enable row level security;
+alter table public.weekly_reviews      enable row level security;
 
 drop policy if exists "own profile" on public.profiles;
 create policy "own profile" on public.profiles
@@ -184,7 +218,8 @@ declare t text;
 begin
   foreach t in array array['habits','habit_logs','tasks','mood_checkins','impulse_logs',
                            'meditation_sessions','streak_freezes','achievements',
-                           'journal_entries','goals','focus_sessions']
+                           'journal_entries','goals','focus_sessions',
+                           'push_subscriptions','weekly_reviews']
   loop
     execute format('drop policy if exists "own rows" on public.%I', t);
     execute format('create policy "own rows" on public.%I for all

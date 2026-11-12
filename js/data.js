@@ -105,7 +105,7 @@
       }
       S.profile = profile;
 
-      const [habits, logs, tasks, moods, impulses, meds, freezes, ach, journal, goals] = await Promise.all([
+      const [habits, logs, tasks, moods, impulses, meds, freezes, ach, journal, goals, reviews] = await Promise.all([
         this.fetchAll('habits', 'position'),
         this.fetchAll('habit_logs', 'date'),
         this.fetchAll('tasks'),
@@ -116,10 +116,12 @@
         this.fetchAll('achievements', 'unlocked_at'),
         // tabelas mais novas: se ainda não existirem, o app abre mesmo assim
         this.fetchAll('journal_entries').catch(e => { console.warn('journal_entries:', e.message); return []; }),
-        this.fetchAll('goals', 'position').catch(e => { console.warn('goals:', e.message); return []; })
+        this.fetchAll('goals', 'position').catch(e => { console.warn('goals:', e.message); return []; }),
+        this.fetchAll('weekly_reviews').catch(e => { console.warn('weekly_reviews:', e.message); return []; })
       ]);
       S.journal = journal;
       S.goals = goals;
+      S.reviews = reviews;
       S.habits = habits;
       S.logs = logs.map(l => ({ habit_id: l.habit_id, date: l.date }));
       S.tasks = tasks;
