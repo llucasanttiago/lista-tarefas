@@ -674,3 +674,111 @@ section.first { margin-top: 0; }
 .ift { display: flex; flex-direction: column; gap: 4px; }
 .ift > div { display: flex; gap: 10px; align-items: baseline; }
 .ift-k { flex: 0 0 46px; min-width: 0; }
+
+/* ======================================================================
+   v5: responsividade (celular pequeno, iPhone, tablet, PC)
+   ====================================================================== */
+/* Altura real da tela no celular (a barra do Safari não corta nada) */
+body, .screen { min-height: 100vh; min-height: 100dvh; }
+.screen { padding-top: max(24px, env(safe-area-inset-top)); padding-bottom: max(24px, env(safe-area-inset-bottom)); }
+.modal { max-height: calc(100vh - 32px); max-height: calc(100dvh - 32px); overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+.modal.full { min-height: min(640px, calc(100dvh - 32px)); }
+.lock { padding: max(24px, env(safe-area-inset-top)) 16px max(24px, env(safe-area-inset-bottom)); overflow-y: auto; }
+
+/* Com uma janela aberta, o fundo não rola junto */
+body:has(#modal-root .modal-backdrop), body:has(> .lock) { overflow: hidden; }
+
+/* Toque rápido, sem atraso de duplo toque */
+button, a, label, input, textarea, select, [data-action] { touch-action: manipulation; }
+
+/* iPhone: campos com 16px não dão zoom ao tocar */
+@media (pointer: coarse) {
+  input, textarea, select, .input { font-size: 16px !important; }
+}
+input[type=time], input[type=number] { min-width: 0; -webkit-appearance: none; appearance: none; min-height: 48px; }
+
+/* Áreas de toque de pelo menos ~40px */
+.pill { min-height: 36px; }
+.chip, .templates .chip { min-height: 36px; display: inline-flex; align-items: center; }
+.task-check { position: relative; }
+.task-check::after { content: ''; position: absolute; inset: -9px; }
+.subtle-link, #authSwitch { display: inline-block; padding: 10px 6px; margin-top: 4px; }
+.link-btn { min-height: 40px; }
+.pe-plan .link-btn { padding: 10px 0; }
+.keypad .kp-alt { min-width: 64px; }
+.keypad button { touch-action: manipulation; user-select: none; -webkit-user-select: none; }
+
+/* Hover só em quem tem mouse (no celular o botão não fica "preso" aceso) */
+@media (hover: none) {
+  .ci-emojis button:hover, .icon-btn:hover { background: transparent; }
+}
+
+/* Celulares pequenos (iPhone SE 1ª geração, Androids compactos) */
+@media (max-width: 380px) {
+  .emoji-grid { grid-template-columns: repeat(6, 1fr); }
+}
+@media (max-width: 350px) {
+  .ci-row { flex-wrap: wrap; justify-content: center; padding: 10px 12px; }
+  .ci-row > span { width: 100%; text-align: center; }
+  .ci-emojis { width: 100%; justify-content: space-between; }
+  .ci-emojis button { width: 40px; height: 40px; font-size: 22px; }
+  .view { padding-left: 12px; padding-right: 12px; }
+}
+
+/* Celular: janelas sobem de baixo, como no iPhone (mais fácil de alcançar com o polegar) */
+@media (max-width: 600px) {
+  .modal-backdrop { align-items: flex-end; padding: max(16px, env(safe-area-inset-top)) 0 0; }
+  .modal, .modal.small, .modal.sheet {
+    max-width: none; border-radius: 24px 24px 0 0; border-bottom: 0;
+    max-height: calc(100vh - 16px); max-height: calc(100dvh - max(16px, env(safe-area-inset-top)));
+    padding-bottom: calc(24px + var(--safe-b));
+    transform: translateY(48px);
+  }
+  .modal::before { content: ''; display: block; width: 40px; height: 4px; border-radius: 4px; background: var(--surface-3); margin: -12px auto 14px; }
+  /* Meditação, respiração, foco: tela cheia */
+  .modal-backdrop:has(.modal.full) { padding: 0; }
+  .modal.full { min-height: 100vh; min-height: 100dvh; max-height: 100dvh; border-radius: 0; border: 0; padding-top: calc(24px + env(safe-area-inset-top)); }
+  .modal.full::before { display: none; }
+}
+
+/* Celular deitado: menos espaço vertical */
+@media (max-height: 500px) and (orientation: landscape) {
+  .modal.full { justify-content: flex-start; }
+  .tabbar { padding-top: 4px; padding-bottom: calc(4px + var(--safe-b)); }
+  .tabbar button { flex-direction: row; justify-content: center; gap: 6px; }
+}
+
+/* Tablet e PC: um pouco mais de respiro */
+@media (min-width: 900px) {
+  .view { padding-top: 32px; }
+}
+@media (max-width: 600px) {
+  .modal.full .close-x { top: calc(12px + env(safe-area-inset-top)); }
+}
+
+/* Telas cheias: centraliza quando cabe e rola desde o topo quando não cabe */
+.modal.full { justify-content: flex-start; }
+.modal.full > * { flex-shrink: 0; }
+.modal.full::before, .modal.full::after { content: ''; display: block; flex: 1 1 0; min-height: 0; width: 0; height: auto; margin: 0; background: none; }
+@media (max-width: 600px) { .modal.full::before { display: block; } }
+
+/* Celular pequeno: botão Impulso redondo e só com ícone, para não cobrir o "Começar agora" */
+@media (max-width: 380px), (max-height: 700px) {
+  .sos { width: 56px; height: 56px; padding: 0; justify-content: center; right: 12px; }
+  .sos-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .sos-wave { font-size: 26px; }
+}
+@media (max-width: 380px) {
+  .home-head h1 { font-size: 21px; }
+}
+
+/* Celular deitado: meditação/respiração/foco também em tela cheia */
+@media (max-height: 500px) {
+  .modal-backdrop:has(.modal.full) { padding: 0; }
+  .modal.full { max-width: none; min-height: 100vh; min-height: 100dvh; max-height: 100dvh; border-radius: 0; border: 0;
+    padding-left: max(20px, env(safe-area-inset-left)); padding-right: max(20px, env(safe-area-inset-right)); }
+}
+/* PC e tablet deitado: botão Impulso fora da coluna de conteúdo, sem cobrir nada */
+@media (min-width: 900px) {
+  .sos { right: auto; left: calc(50% + 296px); }
+}

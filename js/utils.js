@@ -106,7 +106,7 @@
       wrap.className = 'modal-backdrop';
       wrap.innerHTML = `<div class="modal ${cls}" role="dialog" aria-modal="true">${html}</div>`;
       root.appendChild(wrap);
-      requestAnimationFrame(() => wrap.classList.add('open'));
+      void wrap.offsetWidth; wrap.classList.add('open'); // força o layout para a animação de entrada rodar
       let closed = false;
       const close = () => {
         if (closed) return; closed = true;
