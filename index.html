@@ -1,42 +1,109 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
-
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Minhas Tarefas</title>
-
-    <link rel="stylesheet" href="style.css">
-
-    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Raiz · Hábitos</title>
+  <meta name="description" content="App pessoal de hábitos.">
+  <meta name="robots" content="noindex, nofollow, noarchive">
+  <meta name="referrer" content="no-referrer">
+  <meta name="theme-color" content="#0b1020">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Raiz">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
 </head>
-
 <body>
 
-    <div class="container">
+  <div id="splash" class="screen center">
+    <div class="logo-mark pulse">🌱</div>
+  </div>
 
-        <h1>🚀 Minhas Tarefas</h1>
-        <div class="streak-box">
-            🔥 <span id="streak">0</span> dias seguidos
-        </div>
-
-        <div class="input-area">
-            <input type="text" id="taskInput" placeholder="Digite uma tarefa...">
-            <button onclick="addTask()">Adicionar</button>
-        </div>
-
-        <div class="progress-container">
-            <div id="progressBar"></div>
-        </div>
-
-        <p id="progressText">0% concluído</p>
-
-        <ul id="taskList"></ul>
-
+  <section id="setup" class="screen center" hidden>
+    <div class="auth-card">
+      <div class="brand"><div class="logo-mark">🌱</div><h1>Raiz</h1></div>
+      <p>Falta conectar o banco de dados.</p>
+      <ol class="how">
+        <li>Crie um projeto grátis em <b>supabase.com</b>.</li>
+        <li>No <b>SQL Editor</b>, rode o arquivo <code>supabase/schema.sql</code>.</li>
+        <li>Em <b>Project Settings → API</b>, copie a <b>Project URL</b> e a chave <b>anon public</b>.</li>
+        <li>Cole as duas em <code>js/config.js</code> e recarregue a página.</li>
+      </ol>
     </div>
+  </section>
 
-    <script src="script.js"></script>
+  <section id="auth" class="screen center" hidden>
+    <div class="auth-card">
+      <div class="brand">
+        <div class="logo-mark">🌱</div>
+        <h1>Raiz</h1>
+        <p class="muted">Cultive hábitos que te sustentam.</p>
+      </div>
+      <form id="authForm">
+        <label class="field"><span>Email</span>
+          <input class="input" type="email" id="authEmail" required autocomplete="email">
+        </label>
+        <label class="field" id="authPassField"><span>Senha</span>
+          <input class="input" type="password" id="authPass" required minlength="6" autocomplete="current-password">
+        </label>
+        <p class="muted small" id="authHint"></p>
+        <button type="submit" class="btn primary block big" id="authSubmit">Entrar</button>
+      </form>
+      <p class="center"><button type="button" class="link subtle-link" id="authForgot">Esqueci minha senha</button></p>
+      <p class="auth-switch"><span id="authSwitchText">Ainda não tem conta?</span>
+        <button type="button" class="link" id="authSwitch">Criar conta</button></p>
+      <p id="authMsg" class="auth-msg" role="status"></p>
+    </div>
+  </section>
 
+  <div id="app" hidden>
+    <main id="view" class="view"></main>
+
+    <button id="sosBtn" class="sos" aria-label="Estou com um impulso">
+      <span class="sos-wave">🌊</span><span>Impulso</span>
+    </button>
+
+    <nav class="tabbar" aria-label="Navegação">
+      <button data-tab="hoje">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/></svg>
+        <span>Hoje</span>
+      </button>
+      <button data-tab="meditar">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.7 7.7a2.5 2.5 0 1 1 1.8 4.3H2"/><path d="M9.6 4.6A2 2 0 1 1 11 8H2"/><path d="M12.6 19.4A2 2 0 1 0 14 16H2"/></svg>
+        <span>Mente</span>
+      </button>
+      <button data-tab="progresso">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20V10"/><path d="M18 20V4"/><path d="M6 20v-4"/></svg>
+        <span>Progresso</span>
+      </button>
+      <button data-tab="conquistas">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="6"/><path d="M15.5 12.9 17 22l-5-3-5 3 1.5-9.1"/></svg>
+        <span>Conquistas</span>
+      </button>
+      <button data-tab="perfil">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        <span>Perfil</span>
+      </button>
+    </nav>
+  </div>
+
+  <div id="modal-root"></div>
+  <div id="toasts" aria-live="polite"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+  <script src="js/config.js"></script>
+  <script src="js/utils.js"></script>
+  <script src="js/gamification.js"></script>
+  <script src="js/data.js"></script>
+  <script src="js/exercises.js"></script>
+  <script src="js/views.js"></script>
+  <script src="js/app.js"></script>
 </body>
-
 </html>
