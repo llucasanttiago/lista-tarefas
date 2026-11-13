@@ -1,6 +1,6 @@
 // Service worker: deixa o app instalável e abrindo rápido.
 // Estratégia "rede primeiro": sempre pega a versão nova; usa o cache só offline.
-const CACHE = 'raiz-v8';
+const CACHE = 'raiz-v9';
 const SHELL = [
   './', './index.html', './css/style.css', './manifest.webmanifest', './icons/icon.svg',
   './js/config.js', './js/sound.js', './js/utils.js', './js/gamification.js', './js/data.js', './js/notify.js',
@@ -8,7 +8,7 @@ const SHELL = [
 ];
 
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL.map(u => new Request(u, { cache: 'reload' })))).then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', e => {
@@ -45,7 +45,8 @@ self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET' || url.origin !== location.origin) return; // Supabase/CDN: direto na rede
   e.respondWith(
-    fetch(e.request)
+    // "no-cache": sempre confere com o servidor se há versão nova (evita misturar arquivos velhos e novos)
+    fetch(e.request, { cache: 'no-cache' })
       .then(res => {
         const copy = res.clone();
         caches.open(CACHE).then(c => c.put(e.request, copy));
