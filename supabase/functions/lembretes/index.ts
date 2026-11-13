@@ -56,18 +56,23 @@ const CORS = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-async function sendTo(sb: ReturnType<typeof createClient>, userId: string, payload: object) {
+type SendErr = { status?: number; message: string };
+
+async function sendTo(sb: ReturnType<typeof createClient>, userId: string, payload: object, errors?: SendErr[]) {
   const { data: subs } = await sb.from("push_subscriptions").select("*").eq("user_id", userId);
   let n = 0;
   for (const s of subs ?? []) {
     try {
       await webpush.sendNotification(
         { endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } },
-        JSON.stringify(payload), { TTL: 600 },
+        JSON.stringify(payload), { TTL: 600, urgency: "high" },
       );
       n++;
     } catch (e) {
-      const code = (e as { statusCode?: number }).statusCode;
+      const err = e as { statusCode?: number; body?: string; message?: string };
+      const code = err.statusCode;
+      console.error("push falhou", code, err.body || err.message);
+      errors?.push({ status: code, message: String(err.body || err.message || e).slice(0, 200) });
       if (code === 404 || code === 410) await sb.from("push_subscriptions").delete().eq("id", s.id);
     }
   }
@@ -87,10 +92,12 @@ Deno.serve(async (req) => {
     const jwt = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "");
     const { data } = await sb.auth.getUser(jwt);
     if (!data?.user) return new Response("forbidden", { status: 403, headers: CORS });
+    const { count } = await sb.from("push_subscriptions").select("id", { count: "exact", head: true }).eq("user_id", data.user.id);
+    const errors: SendErr[] = [];
     const n = await sendTo(sb, data.user.id, {
       title: "Teste 🌱", body: "Seus lembretes estão funcionando.", tag: "raiz-test", url: APP_URL,
-    });
-    return Response.json({ ok: true, sent: n }, { headers: CORS });
+    }, errors);
+    return Response.json({ ok: true, sent: n, subs: count ?? 0, errors }, { headers: CORS });
   }
 
   const { data: profiles, error } = await sb

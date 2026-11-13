@@ -1164,3 +1164,9 @@ kbd { background: var(--surface-2); border: 1px solid var(--border); border-bott
 .kit button { padding: 8px 11px; border-radius: 12px; font-size: 13px; font-weight: 600; background: var(--bg-2); border: 1px solid var(--border); color: var(--muted); transition: all .15s; }
 .kit button.on { background: rgba(129, 140, 248, .16); color: var(--text); border-color: rgba(129, 140, 248, .55); }
 .small-mantra { font-size: 13.5px; margin-top: 12px; padding: 10px 12px; }
+
+/* Diagnóstico de lembretes */
+.diag { list-style: none; display: flex; flex-direction: column; gap: 10px; }
+.diag li { display: flex; gap: 10px; align-items: flex-start; background: var(--bg-2); border-radius: 12px; padding: 10px 12px; font-size: 14px; font-weight: 600; }
+.diag li > span:last-child { display: flex; flex-direction: column; gap: 3px; }
+.diag small { font-weight: 400; color: var(--muted); font-size: 12.5px; }

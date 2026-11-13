@@ -324,13 +324,7 @@
       const perm = await Notification.requestPermission();
       if (perm !== 'granted') { U.toast('Sem permissão, não consigo enviar lembretes.', 'error'); return; }
       try {
-        const reg = await navigator.serviceWorker.ready;
-        let sub = await reg.pushManager.getSubscription();
-        if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(window.RAIZ_CONFIG.VAPID_PUBLIC_KEY) });
-        const j = sub.toJSON();
-        await DB.upsert('push_subscriptions', {
-          user_id: S.user.id, endpoint: j.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth, user_agent: navigator.userAgent.slice(0, 200)
-        }, 'endpoint');
+        await P.ensureSubscription();
         const r = P.risk();
         const c = H.cfg();
         await DB.updateProfile({ reminders: Object.assign(P.settings(), { enabled: true, riskHour: r.window ? r.window.start : null, hrtNight: { on: !!c.night, from: c.nightFrom, to: c.nightTo, every: c.nightEvery } }) });
@@ -374,15 +368,101 @@
       }
     },
 
-    async testPush() {
-      try {
-        const { error } = await DB.client.functions.invoke('lembretes', { body: { test: true } });
-        if (error) throw error;
-        U.toast('Enviei um lembrete de teste. Deve chegar em alguns segundos.', 'success');
-      } catch (e) {
-        console.error(e);
-        U.toast('O teste falhou. A função "lembretes" já foi criada no Supabase? (veja o README)', 'error');
+    // Garante que este aparelho tem uma inscrição válida, com a chave certa, salva no banco.
+    // Devolve { sub, renewed }.
+    async ensureSubscription(force = false) {
+      const reg = await navigator.serviceWorker.ready;
+      const key = b64ToBytes(window.RAIZ_CONFIG.VAPID_PUBLIC_KEY);
+      let sub = await reg.pushManager.getSubscription();
+      let renewed = false;
+      // inscrição antiga feita com outra chave (ou forçada): refaz
+      const sameKey = s => {
+        try {
+          const k = s.options && s.options.applicationServerKey;
+          if (!k) return true;
+          const a = new Uint8Array(k);
+          return a.length === key.length && a.every((v, i) => v === key[i]);
+        } catch { return true; }
+      };
+      if (sub && (force || !sameKey(sub))) {
+        await DB.remove('push_subscriptions', { endpoint: sub.endpoint }).catch(() => {});
+        await sub.unsubscribe().catch(() => {});
+        sub = null;
       }
+      if (!sub) { sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key }); renewed = true; }
+      const j = sub.toJSON();
+      await DB.upsert('push_subscriptions', {
+        user_id: S.user.id, endpoint: j.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth, user_agent: navigator.userAgent.slice(0, 200)
+      }, 'endpoint');
+      return { sub, renewed };
+    },
+
+    // Diagnóstico completo: testa cada etapa e mostra onde parou
+    async testPush() {
+      const m = U.modal(`
+        <h2>🔔 Testando lembretes</h2>
+        <ul class="diag" id="dg"></ul>
+        <div id="dgEnd"></div>
+        <button class="btn ghost block" data-close style="margin-top:12px">Fechar</button>`, { cls: 'sheet' });
+      const list = m.el.querySelector('#dg'), end = m.el.querySelector('#dgEnd');
+      const step = (txt) => { const li = document.createElement('li'); li.innerHTML = `<span class="dg-i">⏳</span><span>${txt}</span>`; list.appendChild(li); return (ok, extra = '') => { li.querySelector('.dg-i').textContent = ok === true ? '✅' : ok === false ? '❌' : '⚠️'; if (extra) li.querySelector('span:last-child').innerHTML += `<small>${extra}</small>`; }; };
+      const fail = html => { end.innerHTML = `<div class="banner warn" style="margin-top:12px">💡 <div>${html}</div></div>`; };
+
+      // 1) permissão
+      let s = step('Permissão de notificações neste aparelho');
+      if (Notification.permission !== 'granted') {
+        s(false, Notification.permission === 'denied' ? 'Bloqueada.' : 'Ainda não concedida.');
+        return fail('Libere as notificações: no Android, segure o ícone do Raiz (ou do Chrome) → <b>Informações do app → Notificações → Permitir</b>. No navegador, toque no cadeado ao lado do endereço → Notificações → Permitir.');
+      }
+      s(true);
+
+      // 2) notificação local (testa o celular, sem servidor)
+      s = step('Notificação local (sem servidor)');
+      try {
+        const reg = await navigator.serviceWorker.ready;
+        await reg.showNotification('Teste local 🌱', { body: 'Se você está vendo isso, o aparelho mostra notificações do Raiz.', tag: 'raiz-local-test', icon: 'icons/icon-192.png' });
+        s(true, 'Ela deve ter aparecido agora. Se não apareceu, o sistema do celular está escondendo (veja a dica abaixo).');
+      } catch (e) { s(false, U.esc(e.message || e)); }
+
+      // 3) inscrição do aparelho
+      s = step('Registro deste aparelho no servidor');
+      let renewed = false;
+      try { renewed = (await P.ensureSubscription()).renewed; s(true, renewed ? 'Registro refeito agora (o anterior estava faltando ou com a chave errada).' : 'Registro ok e salvo no banco.'); }
+      catch (e) { s(false, U.esc(e.message || e)); return fail('Não consegui registrar o aparelho. Feche o app, abra de novo e tente outra vez.'); }
+
+      // 4) servidor envia
+      s = step('Servidor enviando o teste');
+      let data = null;
+      try {
+        const r = await DB.client.functions.invoke('lembretes', { body: { test: true } });
+        if (r.error) throw r.error;
+        data = r.data || {};
+      } catch (e) {
+        s(false, U.esc(e.message || e));
+        return fail('A função "lembretes" não respondeu. Confira em Supabase → Edge Functions se ela está publicada.');
+      }
+      if (data.sent > 0) {
+        s(true, `Enviado para ${U.plural(data.sent, 'aparelho', 'aparelhos')}.`);
+        U.toast('Teste enviado! Deve chegar em alguns segundos.', 'success');
+        return fail('Se a notificação do servidor <b>não chegar</b> em 1 minuto, mas a local apareceu: no Android, desative a <b>economia de bateria</b> para o Chrome/Raiz e veja se o <b>"Não perturbe"</b> está desligado.');
+      }
+      const errs = data.errors || [];
+      if (data.subs === 0) {
+        s(false, 'O servidor não encontrou nenhum aparelho seu registrado.');
+        return fail('Toque em <b>Desativar</b> e depois em <b>Ativar lembretes</b> de novo.');
+      }
+      if (errs.length) {
+        const codes = errs.map(x => x.status || '?').join(', ');
+        s(false, `O serviço de notificações recusou (código ${U.esc(codes)}).`);
+        if (errs.some(x => x.status === 403 || x.status === 401)) return fail('As chaves do servidor não batem com as do app. No Supabase → Edge Functions → <b>Secrets</b>, confira se <code>VAPID_PUBLIC_KEY</code> é exatamente igual à chave pública do app (<code>js/config.js</code>) e se a <code>VAPID_PRIVATE_KEY</code> é o par dela. Se perdeu a privada, peça para gerar um par novo.');
+        if (errs.some(x => x.status === 404 || x.status === 410)) {
+          try { await P.ensureSubscription(true); } catch { /* ignore */ }
+          return fail('O registro do aparelho tinha expirado. Já refiz: toque em <b>Enviar teste</b> mais uma vez.');
+        }
+        return fail('Erro inesperado no envio: ' + U.esc(errs.map(x => x.message).join(' · ')));
+      }
+      s(null, 'O servidor respondeu, mas não informou detalhes (função antiga?).');
+      fail('Publique de novo a função <b>lembretes</b> com o arquivo atualizado (ela agora mostra o motivo do erro) e teste outra vez.');
     },
 
     // Mantém o horário de risco atualizado para o servidor
