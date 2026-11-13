@@ -85,8 +85,13 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
 
   const URL_ = Deno.env.get("SUPABASE_URL")!;
-  const ADMIN_KEY = Deno.env.get("SERVICE_KEY") || Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+  const custom = (Deno.env.get("SERVICE_KEY") ?? "").trim();
+  const ADMIN_KEY = custom || (Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "").trim();
   const sb = createClient(URL_, ADMIN_KEY, { auth: { persistSession: false } });
+  // tipo da chave em uso (sem revelar a chave): ajuda no diagnóstico
+  const keyKind = ADMIN_KEY.startsWith("sb_secret_") ? "secret (sb_secret_)"
+    : ADMIN_KEY.startsWith("sb_publishable_") ? "publishable (errada: é a pública)"
+    : ADMIN_KEY.startsWith("eyJ") ? "JWT antiga (service_role ou anon)" : ADMIN_KEY ? "formato desconhecido" : "vazia";
 
   // Botão "Enviar teste" do app: só envia para o próprio usuário logado
   if (req.headers.get("x-cron-secret") !== Deno.env.get("CRON_SECRET")) {
@@ -106,7 +111,8 @@ Deno.serve(async (req) => {
     }, errors);
     return Response.json({
       ok: true, sent: n, subs: count ?? 0, subsError: cErr?.message ?? null, errors,
-      adminOk: !aErr, adminError: aErr?.message ?? null, adminKey: Deno.env.get("SERVICE_KEY") ? "SERVICE_KEY" : "SUPABASE_SERVICE_ROLE_KEY",
+      adminOk: !aErr, adminError: aErr?.message ?? null, adminKey: custom ? "SERVICE_KEY" : "SUPABASE_SERVICE_ROLE_KEY", keyKind,
+      version: 9,
     }, { headers: CORS });
   }
 
