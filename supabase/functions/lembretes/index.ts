@@ -145,11 +145,17 @@ Deno.serve(async (req) => {
   if (error) return Response.json({ error: error.message }, { status: 500 });
 
   let sent = 0;
+  // Resumo do que foi avaliado (fica salvo na resposta do agendamento, sem nomes nem chaves)
+  const debug: Record<string, unknown>[] = [];
   for (const p of profiles ?? []) {
     const r = p.reminders ?? {};
+    const dbg: Record<string, unknown> = { enabled: !!r.enabled };
+    debug.push(dbg);
     if (!r.enabled) continue;
 
     const now = localNow(r.tz || "America/Sao_Paulo");
+    dbg.agora = `${now.date} ${String(Math.floor(now.min / 60)).padStart(2, "0")}:${String(now.min % 60).padStart(2, "0")}`;
+    dbg.tz = r.tz || "(padrão)";
     const done: Record<string, string> = { ...(p.reminders_sent ?? {}) };
     const msgs: Msg[] = [];
 
@@ -185,6 +191,14 @@ Deno.serve(async (req) => {
       const doneOn = (hid: string, date: string) =>
         (logs ?? []).some((l) => l.habit_id === hid && l.date === date && (l.amount ?? 1) >= (goal.get(hid) ?? 1));
       const dow = dowOf(now.date);
+      dbg.lembretesDeHabito = r.habits !== false;
+      dbg.habitos = (habits ?? []).filter((h) => h.remind_at).map((h) => ({
+        hora: h.remind_at,
+        diaDele: !(h.days && h.days.length && !h.days.includes(dow)),
+        feitoHoje: doneOn(h.id, now.date),
+        jaAvisadoHoje: done["h:" + h.id] === now.date,
+      }));
+      dbg.semHorario = (habits ?? []).filter((h) => !h.remind_at).length;
 
       if (r.habits !== false) {
         for (const h of habits ?? []) {
@@ -235,6 +249,7 @@ Deno.serve(async (req) => {
       clearFocus = true;
     }
 
+    dbg.enviar = msgs.map((m) => m.key.startsWith("h:") ? "hábito" : m.key);
     if (!msgs.length) continue;
 
     for (const m of msgs) {
@@ -251,5 +266,5 @@ Deno.serve(async (req) => {
     await sb.from("profiles").update(patch).eq("id", p.id);
   }
 
-  return Response.json({ ok: true, sent });
+  return Response.json({ ok: true, sent, debug });
 });
