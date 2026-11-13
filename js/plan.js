@@ -441,14 +441,28 @@
         s(false, U.esc(e.message || e));
         return fail('A função "lembretes" não respondeu. Confira em Supabase → Edge Functions se ela está publicada.');
       }
+      // 5) chave de administrador (lembretes agendados com o app fechado)
+      const adminStep = () => {
+        if (data.adminOk === undefined) return true;
+        const a = step('Lembretes agendados (app fechado)');
+        if (data.adminOk) { a(true, 'O servidor consegue ler seus horários.'); return true; }
+        a(false, 'A chave de administrador da função não funciona: ' + U.esc(data.adminError || ''));
+        fail(`Os lembretes automáticos não conseguem ler o banco. Para corrigir (uma vez só):<br>
+          1. Supabase → <b>Project Settings → API Keys</b> → na parte <b>Secret keys</b>, copie a chave <code>sb_secret_…</code> (crie uma se não tiver).<br>
+          2. <b>Edge Functions → Secrets</b> → adicione <b>SERVICE_KEY</b> com esse valor.<br>
+          3. Toque em <b>Enviar teste</b> de novo. ${data.sent > 0 ? '' : ''}`);
+        return false;
+      };
       if (data.sent > 0) {
         s(true, `Enviado para ${U.plural(data.sent, 'aparelho', 'aparelhos')}.`);
         U.toast('Teste enviado! Deve chegar em alguns segundos.', 'success');
+        if (!adminStep()) return;
         return fail('Se a notificação do servidor <b>não chegar</b> em 1 minuto, mas a local apareceu: no Android, desative a <b>economia de bateria</b> para o Chrome/Raiz e veja se o <b>"Não perturbe"</b> está desligado.');
       }
       const errs = data.errors || [];
       if (data.subs === 0) {
-        s(false, 'O servidor não encontrou nenhum aparelho seu registrado.');
+        s(false, 'O servidor não encontrou nenhum aparelho seu registrado.' + (data.subsError ? ' ' + U.esc(data.subsError) : ''));
+        if (!adminStep()) return;
         return fail('Toque em <b>Desativar</b> e depois em <b>Ativar lembretes</b> de novo.');
       }
       if (errs.length) {

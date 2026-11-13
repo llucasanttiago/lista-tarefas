@@ -3,6 +3,8 @@
 //
 // Segredos necessários (Supabase > Edge Functions > Secrets):
 //   VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, CRON_SECRET
+//   SERVICE_KEY (opcional): a chave "secret" (sb_secret_...) do projeto. Use quando o
+//   projeto tem as chaves novas e a SUPABASE_SERVICE_ROLE_KEY automática não funciona.
 // SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY já existem automaticamente.
 //
 // PRIVACIDADE: os textos são genéricos de propósito, porque aparecem
@@ -82,22 +84,30 @@ async function sendTo(sb: ReturnType<typeof createClient>, userId: string, paylo
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
 
-  const sb = createClient(
-    Deno.env.get("SUPABASE_URL")!,
-    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
-  );
+  const URL_ = Deno.env.get("SUPABASE_URL")!;
+  const ADMIN_KEY = Deno.env.get("SERVICE_KEY") || Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+  const sb = createClient(URL_, ADMIN_KEY, { auth: { persistSession: false } });
 
   // Botão "Enviar teste" do app: só envia para o próprio usuário logado
   if (req.headers.get("x-cron-secret") !== Deno.env.get("CRON_SECRET")) {
     const jwt = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "");
-    const { data } = await sb.auth.getUser(jwt);
+    const apikey = req.headers.get("apikey") || Deno.env.get("SUPABASE_ANON_KEY") || "";
+    // cliente com o login da própria pessoa (não depende da chave de administrador)
+    const me = createClient(URL_, apikey, { global: { headers: { Authorization: `Bearer ${jwt}` } }, auth: { persistSession: false } });
+    const { data } = await me.auth.getUser(jwt);
     if (!data?.user) return new Response("forbidden", { status: 403, headers: CORS });
-    const { count } = await sb.from("push_subscriptions").select("id", { count: "exact", head: true }).eq("user_id", data.user.id);
+    const { count, error: cErr } = await me.from("push_subscriptions").select("id", { count: "exact", head: true }).eq("user_id", data.user.id);
+    // confere se a chave de administrador (usada pelos lembretes agendados) funciona
+    const { count: aCount, error: aErr0 } = await sb.from("profiles").select("id", { count: "exact", head: true }).eq("id", data.user.id);
+    const aErr = aErr0 ?? (aCount ? null : { message: "a chave não tem acesso de administrador (não enxerga os perfis)" });
     const errors: SendErr[] = [];
-    const n = await sendTo(sb, data.user.id, {
+    const n = await sendTo(me, data.user.id, {
       title: "Teste 🌱", body: "Seus lembretes estão funcionando.", tag: "raiz-test", url: APP_URL,
     }, errors);
-    return Response.json({ ok: true, sent: n, subs: count ?? 0, errors }, { headers: CORS });
+    return Response.json({
+      ok: true, sent: n, subs: count ?? 0, subsError: cErr?.message ?? null, errors,
+      adminOk: !aErr, adminError: aErr?.message ?? null, adminKey: Deno.env.get("SERVICE_KEY") ? "SERVICE_KEY" : "SUPABASE_SERVICE_ROLE_KEY",
+    }, { headers: CORS });
   }
 
   const { data: profiles, error } = await sb
