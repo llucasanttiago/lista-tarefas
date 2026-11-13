@@ -67,7 +67,7 @@ async function sendTo(sb: ReturnType<typeof createClient>, userId: string, paylo
     try {
       await webpush.sendNotification(
         { endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } },
-        JSON.stringify(payload), { TTL: 600, urgency: "high" },
+        JSON.stringify(payload), { TTL: 7200, urgency: "high" }, // guarda até 2 h se o celular estiver dormindo
       );
       n++;
     } catch (e) {
