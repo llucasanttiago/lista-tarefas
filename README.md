@@ -16,6 +16,10 @@ Os dados ficam salvos no Supabase, com login e senha. Funciona no PC e no celula
 ### Atualizar para a versão 5
 1. **SQL Editor** do Supabase → cole todo o [`supabase/schema.sql`](supabase/schema.sql) → **Run**. Ele só adiciona colunas e não apaga nada. Antes disso o app funciona, mas moedas e missões ficam só no aparelho e os campos novos dos hábitos ficam escondidos.
 2. **Edge Functions → lembretes** → cole o novo [`index.ts`](supabase/functions/lembretes/index.ts) → **Deploy** (para os lembretes de cada hábito e "sequência em risco" com o app fechado).
+3. **Se o "Enviar teste" (Perfil → Lembretes) mostrar ❌ em "Lembretes agendados"**: o projeto usa as chaves novas do Supabase e a chave automática de administrador não funciona. Resolva assim:
+   - **Project Settings → API Keys → Secret keys** → copie a chave `sb_secret_…` → **Edge Functions → Secrets** → crie `SERVICE_KEY` com ela.
+   - **SQL Editor** → rode `grant usage on schema public to service_role; grant all on all tables in schema public to service_role;` (já está no `schema.sql`).
+   - Publique a função de novo e teste.
 
 ## O que tem
 
