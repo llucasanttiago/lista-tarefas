@@ -29,6 +29,10 @@
       label.textContent = txt;
       orb.style.transitionDuration = sec + 's';
       orb.dataset.phase = kind;
+      if (kind === 'in') U.play('breathIn', sec);
+      else if (kind === 'out') U.play('breathOut', sec);
+      else U.play('hold');
+      if (kind === 'in') U.vibrate(30); else if (kind === 'out') U.vibrate([10, 40, 10]);
       timer = setTimeout(next, sec * 1000);
     }
     function tick() {
@@ -49,8 +53,16 @@
   // -------------------------------------------------------------------
   const TRIGGERS = ['Ansiedade', 'Tédio', 'Estresse', 'Solidão', 'Cansaço', 'Tristeza', 'Raiva', 'Redes sociais', 'Celular à noite', 'Fome'];
 
+  function triggerList() {
+    const custom = G.settings().triggers || [];
+    const used = {};
+    S.impulses.forEach(i => (i.triggers || []).forEach(t => { if (!t.includes(':') && !['hrt', 'rápido', 'interrompi', 'simulação'].includes(t)) used[t] = (used[t] || 0) + 1; }));
+    const all = [...new Set([...custom, ...TRIGGERS, ...Object.keys(used)])];
+    return all.sort((a, b) => (used[b] || 0) - (used[a] || 0));
+  }
+
   function openImpulse() {
-    const kinds = [...new Set(S.impulses.map(i => i.kind).filter(Boolean))].slice(-12);
+    const kinds = [...new Set(S.impulses.map(i => i.kind).filter(k => k && k !== 'Coçar'))].slice(-12);
     const data = { kind: '', before: 7, after: null, triggers: new Set(), note: '' };
     let breath = null;
 
@@ -68,6 +80,7 @@
           <p class="muted">Um impulso é como uma onda: ele sobe, atinge o pico e passa. Normalmente em poucos minutos. Você não precisa obedecer, só precisa surfar.</p>
         </div>
         ${P.impulseBlock()}
+        <button class="btn soft block hrt-shortcut" id="impHrt">✋ É vontade de coçar? Abrir o treino anti-coçar</button>
         <label class="field">
           <span>Qual é o impulso? <em class="muted">(opcional)</em></span>
           <input class="input" id="impKind" list="impKinds" maxlength="60" placeholder="ex.: celular, doce, comprar, cigarro…" autocomplete="off">
@@ -83,6 +96,8 @@
       r.oninput = () => { body.querySelector('#impBeforeVal').textContent = r.value; };
       const collect = () => { data.kind = body.querySelector('#impKind').value.trim(); data.before = +r.value; };
       body.querySelector('#impStart').onclick = () => { collect(); step2(); };
+      body.querySelector('#impHrt').onclick = () => { m.close(); setTimeout(() => H.open(), 230); };
+      if (P.impulseBlock()) G.flag('planRead');
       body.querySelector('#impSkip').onclick = () => { collect(); step3(); };
     }
 
@@ -109,7 +124,8 @@
         <div class="field">
           <span>O que disparou? <em class="muted">(toque para marcar)</em></span>
           <div class="chips" id="trigChips">
-            ${TRIGGERS.map(t => `<button type="button" class="chip" data-t="${U.esc(t)}">${U.esc(t)}</button>`).join('')}
+            ${triggerList().map(t => `<button type="button" class="chip" data-t="${U.esc(t)}">${U.esc(t)}</button>`).join('')}
+            <button type="button" class="chip add" id="trigAdd">+ outro</button>
           </div>
         </div>
         <label class="field">
@@ -124,6 +140,17 @@
       r.oninput = () => { body.querySelector('#impAfterVal').textContent = r.value; };
       body.querySelector('#trigChips').onclick = e => {
         const c = e.target.closest('.chip'); if (!c) return;
+        if (c.id === 'trigAdd') {
+          const t = (prompt('Qual gatilho?') || '').trim().slice(0, 30);
+          if (!t) return;
+          data.triggers.add(t);
+          const nb = document.createElement('button');
+          nb.type = 'button'; nb.className = 'chip on'; nb.dataset.t = t; nb.textContent = t;
+          c.before(nb);
+          const list = G.settings().triggers || [];
+          if (!list.includes(t)) G.saveSettings({ triggers: list.concat(t).slice(-20) });
+          return;
+        }
         const t = c.dataset.t;
         data.triggers.has(t) ? data.triggers.delete(t) : data.triggers.add(t);
         c.classList.toggle('on');
@@ -154,7 +181,7 @@
         return;
       }
       const month = U.today().slice(0, 7);
-      const monthWins = S.impulses.filter(i => i.resisted && i.date.startsWith(month)).length;
+      const monthWins = S.impulses.filter(i => i.resisted && i.kind !== 'Coçar' && i.date.startsWith(month)).length;
       if (resisted) {
         U.play('achievement'); U.vibrate([30, 40, 30]);
         U.confetti({ particleCount: 150, spread: 100, origin: { y: 0.5 } });
@@ -162,12 +189,12 @@
           <div class="celebrate">
             <div class="celebrate-icon">🏄</div>
             <h2>Você surfou a onda!</h2>
-            <p class="celebrate-title">+${G.XP.resisted} XP</p>
+            <div class="reward-row"><span>+${G.XP.resisted} XP</span><span>+${G.COINS.resisted} 💰</span></div>
             <p class="muted">Esse é o impulso nº <b>${monthWins}</b> que você controlou este mês. Cada vez que você resiste, o próximo fica mais fraco. É assim que o cérebro aprende.</p>
             <p class="muted small" id="impMarked"></p>
             <button class="btn primary block" data-close>Voltar</button>
           </div>`;
-        await G.addXp(G.XP.resisted);
+        await G.reward({ xp: G.XP.resisted, coins: G.COINS.resisted, quiet: true });
         const marked = await App.autoMark(/impuls/i, '🌊');
         if (marked) body.querySelector('#impMarked').innerHTML = `✓ Hábito <b>${U.esc(marked)}</b> marcado como feito hoje.`;
       } else {
@@ -234,6 +261,7 @@
     let elapsed = 0, running = true, last = Date.now(), gi = -1, lock = null, done = false, returns = 0;
     const C = 2 * Math.PI * 110;
 
+    const amb = V.med.amb || 'none';
     const m = U.modal(`
       <div class="med-session">
         <p class="eyebrow">${U.esc(MODE_NAMES[mode])} · ${minutes} min</p>
@@ -247,6 +275,7 @@
           <span>🎯 Me distraí e voltei</span>
           <small id="medReturnN">toque sempre que voltar para a respiração</small>
         </button>`}
+        <div class="amb-mini">${Object.entries(Snd.Amb.LIST).map(([k, n]) => `<button data-amb="${k}" class="${amb === k ? 'on' : ''}" title="${n}">${n.split(' ')[0]}</button>`).join('')}<button data-amb="none" class="${amb === 'none' ? 'on' : ''}" title="Sem som">🔇</button></div>
         <div class="row gap">
           <button class="btn soft" id="medPause">Pausar</button>
           <button class="btn ghost" id="medStop">Encerrar</button>
@@ -255,6 +284,15 @@
 
     const $ = s => m.el.querySelector(s);
     U.play('bell');
+    if (amb !== 'none') Snd.Amb.start(amb);
+    m.el.querySelector('.amb-mini').onclick = e => {
+      const b = e.target.closest('[data-amb]'); if (!b) return;
+      const k = b.dataset.amb;
+      V.med.amb = k; U.setPref('amb', k);
+      if (k === 'none') Snd.Amb.stop(); else Snd.Amb.start(k);
+      m.el.querySelectorAll('.amb-mini button').forEach(x => x.classList.toggle('on', x === b));
+    };
+    let lastMin = 0;
     U.wakeLock().then(l => {
       lock = l;
       if (done && lock) { try { lock.release(); } catch { /* ignore */ } }
@@ -274,6 +312,9 @@
         g.classList.remove('fade'); void g.offsetWidth; g.classList.add('fade');
         g.textContent = guides[idx];
       }
+      // sino suave a cada 5 minutos (sessões de 10 min ou mais)
+      const mn = Math.floor(elapsed / 300);
+      if (running && total >= 600 && mn > lastMin && left > 30) { lastMin = mn; U.play('soft'); }
       if (left <= 0) complete();
     }, 250);
 
@@ -293,7 +334,8 @@
       if (mins >= 1) complete(mins); else m.close();
     };
 
-    function cleanup() { clearInterval(iv); if (lock) { try { lock.release(); } catch { /* ignore */ } } }
+    function cleanup() { clearInterval(iv); Snd.Amb.stop(); N.cancel('med-end'); if (lock) { try { lock.release(); } catch { /* ignore */ } } }
+    N.at('med-end', total * 1000 + 1500, () => { if (!done && document.hidden) N.show('🌸 Meditação concluída', 'Volte ao Raiz para registrar.', { tag: 'raiz-med' }); });
 
     async function complete(mins = minutes) {
       if (done) return; done = true;
@@ -308,18 +350,19 @@
       if (!ok) { U.toast('Não consegui salvar a sessão. Verifique sua conexão.', 'error'); m.close(); return; }
 
       const xp = G.XP.medBase + mins + Math.min(returns, 20);
+      const coins = Math.min(10, 2 + Math.floor(mins / 3));
       U.confetti({ particleCount: 100, spread: 80, origin: { y: 0.5 } });
       m.el.innerHTML = `
         <div class="celebrate">
           <div class="celebrate-icon">🌸</div>
           <h2>${mins} ${mins === 1 ? 'minuto' : 'minutos'} de presença</h2>
-          <p class="celebrate-title">+${xp} XP</p>
+          <div class="reward-row"><span>+${xp} XP</span><span>+${coins} 💰</span></div>
           ${returns ? `<p class="muted">Você percebeu a distração e voltou <b>${returns} ${returns === 1 ? 'vez' : 'vezes'}</b>. Cada volta é exatamente o treino que fortalece o autocontrole.</p>`
                     : `<p class="muted">Você deu ao seu cérebro um descanso de verdade.</p>`}
           <p class="muted small" id="medMarked"></p>
           <button class="btn primary block" data-close>Concluir</button>
         </div>`;
-      await G.addXp(xp);
+      await G.reward({ xp, coins, quiet: true });
       const marked = await App.autoMark(/medit|mindful/i, '🧘');
       if (marked) m.el.querySelector('#medMarked').innerHTML = `✓ Hábito <b>${U.esc(marked)}</b> marcado como feito hoje.`;
       App.render();
@@ -339,9 +382,10 @@
         <div id="bh"></div>
         <button class="btn ghost block" data-close>Encerrar</button>
       </div>`, { cls: 'full', dismissable: false, onClose: () => b && b.stop() });
-    b = breathe(m.el.querySelector('#bh'), key, seconds, () => {
-      U.play('soft');
+    b = breathe(m.el.querySelector('#bh'), key, seconds, async () => {
+      U.play('achievement');
       m.el.querySelector('.breath-label').textContent = 'Muito bem. 🌿';
+      if (!G.flagged('breath')) { await G.flag('breath'); await G.reward({ xp: 5, coins: 3, quiet: true }); U.toast('🌬️ Respiração feita · +5 XP · +3 💰', 'success'); App.render(); }
     });
   }
 
@@ -370,6 +414,8 @@
             <button class="btn primary block" data-close>Concluir</button>
           </div>`;
         S.flags.grounding = true;
+        U.play('achievement');
+        if (!G.flagged('breath')) G.flag('breath');
         G.addXp(G.XP.grounding).then(() => G.checkAchievements());
         return;
       }
@@ -475,7 +521,7 @@
           <p class="muted small" id="jMarked"></p>
           <button class="btn primary block" data-close>Concluir</button>
         </div>`;
-      await G.addXp(G.XP.journal);
+      await G.reward({ xp: G.XP.journal, coins: 5, quiet: true });
       const marked = await App.autoMark(/escrita|di[áa]rio|journal/i, '✍️');
       if (marked) m.el.querySelector('#jMarked').innerHTML = `✓ Hábito <b>${U.esc(marked)}</b> marcado como feito hoje.`;
       App.render();
@@ -505,5 +551,116 @@
     };
   }
 
-  window.X = { openImpulse, openMeditation, openBreathing, openGrounding, openJournal, readJournal, PATTERNS, MODE_NAMES };
+  // -------------------------------------------------------------------
+  // Foco profundo (pomodoro) com som ambiente e alarme
+  // -------------------------------------------------------------------
+  function openPomodoro(minutes = 25) {
+    const st = { minutes, task: '', amb: U.pref('pomo-amb', 'marrom') };
+    const pending = S.tasks.filter(t => !t.done && t.date <= U.today()).slice(0, 6);
+    const m = U.modal(`<div class="pomo" id="pmB"></div>`, { cls: 'full', dismissable: false, onClose: cleanup });
+    const body = m.el.querySelector('#pmB');
+    let iv = null, end = 0, pausedLeft = null, lock = null, done = false;
+
+    function setup() {
+      body.innerHTML = `
+        <button class="icon-btn close-x" data-close aria-label="Fechar">✕</button>
+        <p class="eyebrow">⏱️ Foco profundo</p>
+        <h2>Uma coisa só, sem distração.</h2>
+        <div class="durations pm-dur">${[15, 25, 45, 60].map(n => `<button class="dur ${st.minutes === n ? 'on' : ''}" data-n="${n}"><b>${n}</b><small>min</small></button>`).join('')}</div>
+        <label class="field"><span>No que você vai focar?</span>
+          <input class="input" id="pmTask" maxlength="100" placeholder="ex.: estudar capítulo 3" value="${U.esc(st.task)}"></label>
+        ${pending.length ? `<div class="chips pm-tasks">${pending.map(t => `<button type="button" class="chip" data-t="${U.esc(t.text)}">${U.esc(t.text.slice(0, 30))}</button>`).join('')}</div>` : ''}
+        <div class="field"><span>Som ambiente</span>
+          <div class="amb-pick">${Object.entries(Snd.Amb.LIST).map(([k, n]) => `<button data-amb="${k}" class="${st.amb === k ? 'on' : ''}">${n}</button>`).join('')}<button data-amb="none" class="${st.amb === 'none' ? 'on' : ''}">🔇 Silêncio</button></div></div>
+        <button class="btn primary block big" id="pmGo">Começar · ${st.minutes} min</button>`;
+      body.querySelector('.pm-dur').onclick = e => { const b = e.target.closest('[data-n]'); if (!b) return; st.minutes = +b.dataset.n; st.task = body.querySelector('#pmTask').value; U.play('tap'); setup(); };
+      const ch = body.querySelector('.pm-tasks'); if (ch) ch.onclick = e => { const c = e.target.closest('[data-t]'); if (c) body.querySelector('#pmTask').value = c.dataset.t; };
+      body.querySelector('.amb-pick').onclick = e => {
+        const b = e.target.closest('[data-amb]'); if (!b) return;
+        st.amb = b.dataset.amb; U.setPref('pomo-amb', st.amb);
+        body.querySelectorAll('.amb-pick button').forEach(x => x.classList.toggle('on', x === b));
+        if (st.amb === 'none') Snd.Amb.stop(); else Snd.Amb.start(st.amb);
+      };
+      body.querySelector('#pmGo').onclick = () => { st.task = body.querySelector('#pmTask').value.trim(); run(); };
+    }
+
+    const C = 2 * Math.PI * 110;
+    function run() {
+      end = Date.now() + st.minutes * 60000;
+      U.play('start'); U.vibrate(30);
+      if (st.amb !== 'none') Snd.Amb.start(st.amb); else Snd.Amb.stop();
+      U.wakeLock().then(l => { lock = l; });
+      N.at('pomo-end', st.minutes * 60000, () => finish());
+      body.innerHTML = `
+        <p class="eyebrow">Foco profundo · ${st.minutes} min</p>
+        ${st.task ? `<h2 class="pm-task">${U.esc(st.task)}</h2>` : ''}
+        <div class="med-ring">
+          <svg viewBox="0 0 240 240"><circle cx="120" cy="120" r="110" class="ring-bg"/><circle cx="120" cy="120" r="110" class="ring-fg pm" id="pmRing" stroke-dasharray="${C}" stroke-dashoffset="0"/></svg>
+          <div class="med-time" id="pmTime"></div>
+        </div>
+        <p class="muted center">📵 Celular de lado. Se surgir uma distração, anote e volte.</p>
+        <div class="row gap">
+          <button class="btn soft" id="pmPause">Pausar</button>
+          <button class="btn ghost" id="pmStop">Encerrar</button>
+        </div>`;
+      const draw = () => {
+        const left = pausedLeft !== null ? pausedLeft : Math.max(0, end - Date.now());
+        const sec = Math.ceil(left / 1000);
+        const t = body.querySelector('#pmTime'); if (!t) return;
+        t.textContent = `${Math.floor(sec / 60)}:${U.pad(sec % 60)}`;
+        body.querySelector('#pmRing').setAttribute('stroke-dashoffset', String(C * (1 - left / (st.minutes * 60000))));
+        document.title = `${Math.floor(sec / 60)}:${U.pad(sec % 60)} · Foco`;
+      };
+      draw(); iv = setInterval(draw, 500);
+      body.querySelector('#pmPause').onclick = e => {
+        if (pausedLeft === null) { pausedLeft = Math.max(0, end - Date.now()); N.cancel('pomo-end'); Snd.Amb.stop(); e.target.textContent = 'Continuar'; }
+        else { end = Date.now() + pausedLeft; N.at('pomo-end', pausedLeft, () => finish()); pausedLeft = null; if (st.amb !== 'none') Snd.Amb.start(st.amb); e.target.textContent = 'Pausar'; }
+      };
+      body.querySelector('#pmStop').onclick = () => {
+        const mins = Math.floor((st.minutes * 60000 - (pausedLeft !== null ? pausedLeft : end - Date.now())) / 60000);
+        if (mins >= 5 && confirm(`Encerrar e registrar ${mins} minutos de foco?`)) finish(mins);
+        else if (mins < 5 && confirm('Encerrar o foco?')) m.close();
+      };
+    }
+
+    async function finish(mins = st.minutes) {
+      if (done) return; done = true;
+      cleanup();
+      U.play('timerEnd'); U.vibrate([80, 60, 80, 60, 160]);
+      if (document.hidden) N.show('⏱️ Foco concluído!', `${mins} minutos de foco profundo. Hora de uma pausa.`, { tag: 'raiz-pomo', requireInteraction: true });
+      const xp = G.XP.pomodoro + Math.round(mins / 3), coins = 5 + Math.floor(mins / 5);
+      DB.insert('focus_sessions', { user_id: S.user.id, date: U.today(), habit_id: null, minutes: mins, outcome: 'done', mini: false, started_at: new Date(Date.now() - mins * 60000).toISOString() })
+        .then(r => S.focusSessions.push(r)).catch(e => console.warn('focus_sessions:', e.message || e));
+      U.confetti({ particleCount: 130, spread: 100, origin: { y: 0.5 } });
+      body.innerHTML = `
+        <div class="celebrate">
+          <div class="celebrate-icon">🧠</div>
+          <h2>${mins} minutos de foco!</h2>
+          <div class="reward-row"><span>+${xp} XP</span><span>+${coins} 💰</span></div>
+          ${st.task ? `<p class="muted">Foco em: <b>${U.esc(st.task)}</b></p>` : ''}
+          <p class="muted">Faça uma pausa de 5 minutos: levante, beba água, olhe longe.</p>
+          <button class="btn soft block" id="pmBreak">☕ Pausa de 5 min</button>
+          <button class="btn primary block big" data-close>Concluir</button>
+        </div>`;
+      body.querySelector('#pmBreak').onclick = () => {
+        m.close();
+        N.at('pomo-break', 5 * 60000, () => N.alert('☕ Pausa terminou', 'Bora para mais um foco?', { action: 'Focar', onAction: () => openPomodoro(st.minutes) }));
+        U.toast('☕ Pausa de 5 min. Eu aviso quando acabar.', 'info');
+      };
+      await G.flag('pomodoro');
+      G.bumpStat('pomodoros');
+      await G.reward({ xp, coins, quiet: true });
+      App.render();
+      G.checkAchievements();
+    }
+
+    function cleanup() {
+      clearInterval(iv); Snd.Amb.stop(); N.cancel('pomo-end');
+      document.title = 'Raiz · Hábitos';
+      if (lock) { try { lock.release(); } catch { /* ignore */ } }
+    }
+    setup();
+  }
+
+  window.X = { openImpulse, openMeditation, openBreathing, openGrounding, openJournal, readJournal, openPomodoro, PATTERNS, MODE_NAMES };
 })();

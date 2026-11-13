@@ -8,6 +8,7 @@
   <meta name="robots" content="noindex, nofollow, noarchive">
   <meta name="referrer" content="no-referrer">
   <meta name="theme-color" content="#0b1020">
+  <script>try{var t=localStorage.getItem("raiz-theme")||"dark";document.documentElement.dataset.theme=t==="auto"?(matchMedia("(prefers-color-scheme: light)").matches?"light":"dark"):t;}catch(e){}</script>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
@@ -65,6 +66,7 @@
   <div id="app" hidden>
     <main id="view" class="view"></main>
 
+    <button id="hrtBtn" class="hrt-fab" aria-label="Vontade de coçar" title="Vontade de coçar (C)">✋</button>
     <button id="sosBtn" class="sos" aria-label="Estou com um impulso">
       <span class="sos-wave">🌊</span><span class="sos-label">Impulso</span>
     </button>
@@ -99,12 +101,15 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
   <script src="js/config.js"></script>
+  <script src="js/sound.js"></script>
   <script src="js/utils.js"></script>
   <script src="js/gamification.js"></script>
   <script src="js/data.js"></script>
+  <script src="js/notify.js"></script>
   <script src="js/exercises.js"></script>
   <script src="js/focus.js"></script>
   <script src="js/plan.js"></script>
+  <script src="js/hrt.js"></script>
   <script src="js/views.js"></script>
   <script src="js/app.js"></script>
 </body>

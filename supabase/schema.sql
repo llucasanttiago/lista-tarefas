@@ -184,6 +184,22 @@ create table if not exists public.achievements (
   primary key (user_id, code)
 );
 
+-- v5: hábitos flexíveis, quantidade, moedas, missões e configurações ---
+-- dias da semana (1=seg … 7=dom; vazio = todos), período, meta diária, tipo
+alter table public.habits add column if not exists days smallint[];
+alter table public.habits add column if not exists time_of_day text;
+alter table public.habits add column if not exists daily_goal integer not null default 1;
+alter table public.habits add column if not exists unit text;
+alter table public.habits add column if not exists kind text;
+alter table public.habits add column if not exists remind_at text;
+alter table public.habits add column if not exists color text;
+alter table public.habit_logs add column if not exists amount integer not null default 1;
+alter table public.tasks add column if not exists priority smallint not null default 0;
+alter table public.tasks add column if not exists note text;
+alter table public.profiles add column if not exists coins integer not null default 0;
+alter table public.profiles add column if not exists settings jsonb not null default '{}';
+alter table public.profiles add column if not exists daily jsonb not null default '{}';
+
 -- Índices --------------------------------------------------------------
 create index if not exists habit_logs_user_date on public.habit_logs (user_id, date);
 create index if not exists tasks_user_date on public.tasks (user_id, date);

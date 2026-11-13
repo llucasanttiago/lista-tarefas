@@ -7,29 +7,6 @@
     set(k, v) { try { localStorage.setItem(k, v); } catch { /* ignore */ } }
   };
 
-  // ---- Áudio (Web Audio, sem arquivos) ----
-  let audioCtx = null;
-  function ctx() {
-    if (!audioCtx) {
-      const AC = window.AudioContext || window.webkitAudioContext;
-      if (!AC) return null;
-      audioCtx = new AC();
-    }
-    if (audioCtx.state === 'suspended') audioCtx.resume();
-    return audioCtx;
-  }
-  function tone(freq, start, dur, vol = 0.12, type = 'sine') {
-    const c = ctx(); if (!c) return;
-    const o = c.createOscillator(), g = c.createGain();
-    const t0 = c.currentTime + start;
-    o.type = type; o.frequency.value = freq;
-    g.gain.setValueAtTime(0.0001, t0);
-    g.gain.exponentialRampToValueAtTime(vol, t0 + 0.02);
-    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-    o.connect(g).connect(c.destination);
-    o.start(t0); o.stop(t0 + dur + 0.05);
-  }
-
   const MONTHS = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
 
   window.U = {
@@ -47,23 +24,41 @@
       return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     },
     hour() { return new Date().getHours(); },
-
-    soundOn() { return store.get('raiz-sound', 'on') !== 'off'; },
-    play(kind) {
-      if (!U.soundOn()) return;
-      try {
-        if (kind === 'done') { tone(660, 0, 0.25); tone(990, 0.09, 0.4, 0.1); }
-        else if (kind === 'task') { tone(740, 0, 0.22, 0.09); }
-        else if (kind === 'level') { [523, 659, 784, 1047].forEach((f, i) => tone(f, i * 0.12, 0.6, 0.11)); }
-        else if (kind === 'bell') { tone(528, 0, 4, 0.18); tone(1056, 0, 2.5, 0.04); tone(792, 0.02, 3, 0.03); }
-        else if (kind === 'soft') { tone(440, 0, 0.5, 0.06); }
-        else if (kind === 'achievement') { [784, 988, 1175, 1568].forEach((f, i) => tone(f, i * 0.09, 0.5, 0.09, 'triangle')); }
-      } catch { /* ignore */ }
+    minutesNow() { const d = new Date(); return d.getHours() * 60 + d.getMinutes(); },
+    toMin(hhmm) { if (!hhmm || !/^\d{1,2}:\d{2}$/.test(hhmm)) return null; const [h, m] = hhmm.split(':').map(Number); return h * 60 + m; },
+    dow(k = U.today()) { return (U.parseKey(k).getDay() + 6) % 7 + 1; }, // 1=seg … 7=dom
+    plural(n, one, many) { return `${n} ${n === 1 ? one : many}`; },
+    // número aleatório estável a partir de um texto (missões do dia etc.)
+    seeded(str) {
+      let h = 2166136261;
+      for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
+      return () => { h ^= h << 13; h ^= h >>> 17; h ^= h << 5; return ((h >>> 0) % 100000) / 100000; };
     },
-    vibrate(p = 15) { try { navigator.vibrate && navigator.vibrate(p); } catch { /* ignore */ } },
+    rand(a, b) { return a + Math.floor(Math.random() * (b - a + 1)); },
+    // anima um número de "from" até "to"
+    countUp(el, from, to, ms = 700) {
+      if (!el) return;
+      const t0 = performance.now();
+      const step = now => {
+        const p = Math.min(1, (now - t0) / ms), e = 1 - Math.pow(1 - p, 3);
+        el.textContent = Math.round(from + (to - from) * e);
+        if (p < 1) requestAnimationFrame(step);
+      };
+      requestAnimationFrame(step);
+    },
+
+    soundOn() { return Snd.on(); },
+    play(kind, arg) { Snd.play(kind, arg); },
+    pref(k, d = null) { return store.get('raiz-' + k, d); },
+    setPref(k, v) { store.set('raiz-' + k, v); },
+    vibrate(p = 15) {
+      if (store.get('raiz-haptics', 'on') === 'off') return;
+      try { navigator.vibrate && navigator.vibrate(p); } catch { /* ignore */ }
+    },
+    celebrationsOn() { return store.get('raiz-confetti', 'on') !== 'off'; },
 
     confetti(opts = {}) {
-      if (!window.confetti) return;
+      if (!window.confetti || !U.celebrationsOn()) return;
       window.confetti(Object.assign({
         particleCount: 80, spread: 70, origin: { y: 0.7 }, disableForReducedMotion: true,
         colors: ['#34d399', '#818cf8', '#fbbf24', '#22d3ee', '#f472b6']
@@ -78,14 +73,40 @@
       }, opts));
     },
 
-    toast(html, type = 'info') {
+    // toast(html, tipo, { action: 'Desfazer', onAction, ms })
+    toast(html, type = 'info', opts = {}) {
       const box = document.getElementById('toasts');
       const el = document.createElement('div');
-      el.className = 'toast ' + type;
-      el.innerHTML = html;
+      el.className = 'toast ' + type + (opts.action ? ' has-action' : '') + (opts.onClick ? ' clickable' : '');
+      el.innerHTML = `<div class="toast-body">${html}</div>`;
+      if (opts.action) {
+        const b = document.createElement('button');
+        b.className = 'toast-action'; b.textContent = opts.action;
+        b.onclick = () => { opts.onAction && opts.onAction(); dismiss(); };
+        el.appendChild(b);
+      }
+      while (box.children.length > 3) box.firstChild.remove();
       box.appendChild(el);
-      setTimeout(() => el.classList.add('out'), 3400);
-      setTimeout(() => el.remove(), 3800);
+      const ms = opts.ms || (opts.action ? 5000 : 3400);
+      let gone = false;
+      function dismiss() {
+        if (gone) return; gone = true;
+        el.classList.add('out'); setTimeout(() => el.remove(), 380);
+      }
+      el.addEventListener('click', e => { if (!e.target.closest('.toast-action') && opts.onClick) { opts.onClick(); dismiss(); } });
+      setTimeout(dismiss, ms);
+      return { dismiss };
+    },
+    floatText(el, text, cls = '') {
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      const f = document.createElement('div');
+      f.className = 'xp-float ' + cls;
+      f.textContent = text;
+      f.style.left = (r.left + r.width / 2) + 'px';
+      f.style.top = r.top + 'px';
+      document.body.appendChild(f);
+      setTimeout(() => f.remove(), 1300);
     },
     floatXp(el, n) {
       if (!el || !n) return;
@@ -106,22 +127,26 @@
       wrap.className = 'modal-backdrop';
       wrap.innerHTML = `<div class="modal ${cls}" role="dialog" aria-modal="true">${html}</div>`;
       root.appendChild(wrap);
+      document.body.classList.add('modal-open');
       void wrap.offsetWidth; wrap.classList.add('open'); // força o layout para a animação de entrada rodar
       let closed = false;
       const close = () => {
         if (closed) return; closed = true;
         wrap.classList.remove('open');
-        setTimeout(() => wrap.remove(), 220);
+        document.removeEventListener('keydown', onEsc);
+        setTimeout(() => { wrap.remove(); if (!root.children.length) document.body.classList.remove('modal-open'); }, 220);
         onClose && onClose();
       };
       wrap.addEventListener('click', e => {
         if ((dismissable && e.target === wrap) || e.target.closest('[data-close]')) close();
       });
+      function onEsc(e) { if (e.key === 'Escape' && dismissable && root.lastElementChild === wrap) close(); }
+      document.addEventListener('keydown', onEsc);
       return { el: wrap.querySelector('.modal'), close };
     },
 
-    download(filename, text) {
-      const blob = new Blob([text], { type: 'application/json' });
+    download(filename, text, type = 'application/json') {
+      const blob = new Blob([text], { type });
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
       a.download = filename;

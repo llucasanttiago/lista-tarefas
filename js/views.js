@@ -55,8 +55,9 @@
         <div class="lvl-badge">${lv.level}</div>
         <div class="lvl-info">
           <div class="lvl-top"><b>${esc(lv.title)}</b><span class="muted">${lv.into}/${lv.need} XP</span></div>
-          <div class="bar"><div class="bar-fill" style="width:${(lv.into / lv.need * 100).toFixed(1)}%"></div></div>
+          <div class="bar"><div class="bar-fill" data-xpbar style="width:${(lv.into / lv.need * 100).toFixed(1)}%"></div></div>
         </div>
+        <div class="lvl-coins"><span>💰</span><b data-coins>${S.profile.coins || 0}</b></div>
       </div>`;
   }
 
@@ -93,36 +94,99 @@
       </div>`;
   }
 
+  const PERIODS = { manha: ['🌅', 'Manhã'], tarde: ['☀️', 'Tarde'], noite: ['🌙', 'Noite'] };
+
   function habitItem(h, t, compact = false) {
     const done = G.isDone(h.id, t);
+    const amt = G.amount(h.id, t), goal = G.goalOf(h);
+    const counter = G.isCounter(h);
     const wc = G.weekCount(h.id, t);
     const start = U.weekStart(t);
     const dots = Array.from({ length: 7 }, (_, i) => {
       const d = U.addDays(start, i);
-      return `<i class="${G.isDone(h.id, d) ? 'on' : ''} ${d === t ? 'today' : ''}"></i>`;
+      return `<i class="${G.isDone(h.id, d) ? 'on' : ''} ${d === t ? 'today' : ''} ${G.scheduledOn(h, d) ? '' : 'off'}"></i>`;
     }).join('');
     const hit = wc >= h.target_per_week;
+    const hs = t === U.today() ? G.habitStreak(h) : 0;
+    const color = h.color ? ` style="--hc:${esc(h.color)}"` : '';
+    const sub = [];
+    if (counter) sub.push(`<b class="cnt">${amt}/${goal}</b>${h.unit ? ' ' + esc(h.unit) : ''}`);
+    if (h.remind_at && !done) sub.push(`⏰ ${esc(h.remind_at)}`);
+    if (hs >= 2) sub.push(`<span class="hs">🔥 ${hs}</span>`);
     return `
-      <div class="habit ${done ? 'done' : ''} ${compact ? 'compact' : ''}" data-action="toggle-habit" data-id="${h.id}">
-        <div class="habit-icon">${esc(h.icon)}</div>
+      <div class="habit ${done ? 'done' : ''} ${compact ? 'compact' : ''} ${G.isAvoid(h) ? 'avoid' : ''} ${h.color ? 'colored' : ''}"${color} data-action="toggle-habit" data-id="${h.id}" data-date="${t}">
+        <div class="habit-icon" data-action="habit-detail" data-id="${h.id}">${esc(h.icon)}${counter && !done ? `<svg class="mini-ring" viewBox="0 0 36 36"><circle cx="18" cy="18" r="16"/><circle cx="18" cy="18" r="16" class="fg" stroke-dasharray="100.5" stroke-dashoffset="${100.5 * (1 - Math.min(1, amt / goal))}"/></svg>` : ''}</div>
         <div class="habit-body">
           <div class="habit-name">${esc(h.name)}</div>
-          ${compact ? '' : `<div class="habit-week"><span class="dots">${dots}</span><span class="${hit ? 'hit' : 'muted'}">${wc}/${h.target_per_week}${hit ? ' 🎯' : ''}</span></div>`}
+          ${compact
+            ? (sub.length ? `<div class="habit-sub">${sub.join(' · ')}</div>` : '')
+            : `<div class="habit-week"><span class="dots">${dots}</span><span class="${hit ? 'hit' : 'muted'}">${wc}/${h.target_per_week}${hit ? ' 🎯' : ''}</span>${sub.length ? `<span class="habit-sub">${sub.join(' · ')}</span>` : ''}</div>`}
         </div>
-        <button class="check" aria-label="Concluir ${esc(h.name)}">${ICONS.check}</button>
+        ${counter && amt > 0 && !done ? `<button class="icon-btn subtle mini" data-action="habit-dec" data-id="${h.id}" data-date="${t}" aria-label="Diminuir">−</button>` : ''}
+        ${counter && !done
+          ? `<button class="count-btn" data-action="habit-inc" data-id="${h.id}" data-date="${t}" aria-label="Somar 1">+1</button>`
+          : `<button class="check" aria-label="Concluir ${esc(h.name)}">${ICONS.check}</button>`}
       </div>`;
   }
 
-  function taskList(t) {
-    const list = S.tasks.filter(x => x.date === t || (!x.done && x.date < t))
-      .sort((a, b) => (a.done - b.done) || a.date.localeCompare(b.date) || a.created_at.localeCompare(b.created_at));
-    if (!list.length) return `<p class="empty">Nenhuma tarefa ainda. O que você precisa fazer hoje?</p>`;
-    return list.map(x => `
-      <div class="task ${x.done ? 'done' : ''}">
+  // Lista de hábitos do dia agrupada por período (manhã / tarde / noite / qualquer hora)
+  function habitGroups(habits, t, compact) {
+    const groups = { manha: [], tarde: [], noite: [], livre: [] };
+    habits.forEach(h => (groups[h.time_of_day] || groups.livre).push(h));
+    const used = Object.entries(groups).filter(([, l]) => l.length);
+    if (used.length <= 1) return `<div class="habits ${compact ? 'compact' : ''}">${habits.map(h => habitItem(h, t, compact)).join('')}</div>`;
+    return used.map(([k, l]) => `
+      <p class="group-label">${k === 'livre' ? '🕐 Qualquer hora' : PERIODS[k].join(' ')}<span>${l.filter(h => G.isDone(h.id, t)).length}/${l.length}</span></p>
+      <div class="habits ${compact ? 'compact' : ''}">${l.map(h => habitItem(h, t, compact)).join('')}</div>`).join('');
+  }
+
+  function taskRow(x, t) {
+    const late = x.date < t && !x.done;
+    return `
+      <div class="task ${x.done ? 'done' : ''} ${x.priority ? 'prio' : ''}">
         <button class="task-check" data-action="toggle-task" data-id="${x.id}" aria-label="Concluir">${ICONS.check}</button>
-        <div class="task-text">${esc(x.text)}${x.date < t ? `<span class="tag">desde ${U.fmtShort(x.date)}</span>` : ''}</div>
+        <div class="task-text" data-action="edit-task" data-id="${x.id}">${esc(x.text)}${late ? `<span class="tag">desde ${U.fmtShort(x.date)}</span>` : ''}${x.date > t ? `<span class="tag soft">${x.date === U.addDays(t, 1) ? 'amanhã' : U.fmtShort(x.date)}</span>` : ''}${x.note ? '<span class="tag soft">📝</span>' : ''}</div>
+        ${x.done ? '' : `<button class="icon-btn subtle star ${x.priority ? 'on' : ''}" data-action="task-star" data-id="${x.id}" aria-label="Prioridade">${x.priority ? '★' : '☆'}</button>`}
         <button class="icon-btn subtle" data-action="del-task" data-id="${x.id}" aria-label="Apagar">${ICONS.trash}</button>
-      </div>`).join('');
+      </div>`;
+  }
+  const taskSort = (a, b) => (a.done - b.done) || ((b.priority || 0) - (a.priority || 0)) || a.date.localeCompare(b.date) || a.created_at.localeCompare(b.created_at);
+
+  function taskList(t) {
+    const list = S.tasks.filter(x => x.date === t || (!x.done && x.date < t)).sort(taskSort);
+    const upcoming = S.tasks.filter(x => x.date > t && !x.done).sort(taskSort);
+    let html = list.length ? list.map(x => taskRow(x, t)).join('') : `<p class="empty">Nenhuma tarefa para hoje. O que você precisa fazer?</p>`;
+    if (upcoming.length) {
+      html += `<button class="link-btn upcoming-toggle" data-action="tasks-upcoming">${ui.upcomingOpen ? '▴' : '▾'} Próximos dias · ${upcoming.length}</button>`;
+      if (ui.upcomingOpen) html += upcoming.map(x => taskRow(x, t)).join('');
+    }
+    if (list.some(x => x.done)) html += `<button class="link-btn subtle-right" data-action="tasks-clear">Limpar concluídas</button>`;
+    return html;
+  }
+
+  function taskEditor(task) {
+    if (!task) return;
+    const m = U.modal(`
+      <h2>Editar tarefa</h2>
+      <label class="field"><span>Tarefa</span><input class="input" id="teText" maxlength="200" value="${esc(task.text)}"></label>
+      <div class="row gap">
+        <label class="field" style="flex:1"><span>Data</span><input class="input" type="date" id="teDate" value="${task.date}"></label>
+        <label class="switch-row" style="flex:1;margin-top:10px"><span>★ Prioridade</span><input type="checkbox" id="tePrio" ${task.priority ? 'checked' : ''}></label>
+      </div>
+      ${DB.v5 ? `<label class="field"><span>Anotação</span><textarea id="teNote" rows="3" maxlength="600" placeholder="Detalhes, links, passos…">${esc(task.note || '')}</textarea></label>` : ''}
+      <div class="row gap end">
+        <button class="btn ghost danger-text" id="teDel">Apagar</button>
+        <button class="btn ghost" data-close>Cancelar</button>
+        <button class="btn primary" id="teSave">Salvar</button>
+      </div>`, { cls: 'sheet' });
+    const $ = q => m.el.querySelector(q);
+    $('#teSave').onclick = () => {
+      const text = $('#teText').value.trim(); if (!text) return;
+      const patch = { text, date: $('#teDate').value || task.date, priority: $('#tePrio').checked ? 1 : 0 };
+      if ($('#teNote')) patch.note = $('#teNote').value.trim() || null;
+      m.close(); App.patchTask(task.id, patch); U.play('pop');
+    };
+    $('#teDel').onclick = () => { m.close(); App.deleteTask(task.id); };
   }
 
   // ------------------------------------------------------------------ Metas
@@ -255,7 +319,7 @@
   }
 
   // ------------------------------------------------------------------ HOJE (foco em UMA coisa)
-  const ui = { dayOpen: U.store.get('raiz-day-open', '0') === '1', progTab: 'resumo' };
+  const ui = { dayOpen: U.store.get('raiz-day-open', '1') === '1', progTab: 'resumo', planDate: null, taskDate: 'hoje', taskPrio: false, upcomingOpen: false };
 
   function focusCard() {
     const st = F.state();
@@ -334,7 +398,7 @@
           <span class="day-label"><b>Seu dia</b><small>${doneN} de ${habits.length} hábitos</small></span>
           <span class="chev">${ui.dayOpen ? '▴' : '▾'}</span>
         </button>
-        ${ui.dayOpen ? `<div class="habits compact">${habits.map(h => habitItem(h, t, true)).join('')}</div>` : ''}
+        ${ui.dayOpen ? `<div class="strip-body">${habitGroups(habits, t, true)}</div>` : ''}
       </div>`;
   }
 
@@ -348,11 +412,69 @@
       </div>`;
   }
 
+  // Missões do dia
+  function questsCard() {
+    const qs = G.quests();
+    if (!qs.length) return '';
+    const d = G.daily();
+    const allClaimed = qs.every(q => q.claimed);
+    return `
+      <div class="card quests">
+        <div class="section-head">
+          <h3>📜 Missões do dia</h3>
+          <span class="quest-chest ${allClaimed ? (d.chest ? 'opened' : 'ready') : ''}" ${allClaimed && !d.chest ? 'data-action="chest-open"' : ''} title="Complete as 3 para ganhar um baú">${d.chest ? '✅' : '🧰'}</span>
+        </div>
+        ${qs.map(q => `
+          <div class="quest ${q.done ? 'done' : ''} ${q.claimed ? 'claimed' : ''}">
+            <span class="quest-ic">${q.icon}</span>
+            <div class="quest-body">
+              <b>${esc(q.title)}</b>
+              <div class="bar"><div class="bar-fill ${q.done ? 'gold' : ''}" style="width:${(q.prog / q.target * 100).toFixed(0)}%"></div></div>
+            </div>
+            ${q.claimed ? '<span class="quest-ok">✓</span>'
+              : q.done ? `<button class="quest-claim" data-action="quest-claim" data-id="${q.id}">Pegar<small>+${q.coins} 💰</small></button>`
+              : `<span class="quest-prog">${q.prog}/${q.target}</span>`}
+          </div>`).join('')}
+        ${!allClaimed ? `<p class="muted small center">Complete as 3 para abrir um <b>baú surpresa</b> 🧰</p>` : ''}
+      </div>`;
+  }
+
+  function giftCard() {
+    const d = G.daily();
+    if (d.gift) return '';
+    return `
+      <button class="gift-card" data-action="gift-open">
+        <span class="gift-ic">🎁</span>
+        <span><b>Presente do dia</b><small>${(d.loginStreak || 1) > 1 ? `${d.loginStreak} dias seguidos abrindo o app · prêmio maior` : 'Toque para abrir'}</small></span>
+        <span class="gift-go">Abrir</span>
+      </button>`;
+  }
+
+  function banners() {
+    const t = U.today();
+    const out = [];
+    if (!DB.v5) out.push(`<div class="banner warn">🛠️ <div><b>Atualize o banco para liberar tudo</b><small>No Supabase: SQL Editor → cole o <code>supabase/schema.sql</code> → Run. Seus dados não são apagados. Até lá, moedas e missões ficam salvas só neste aparelho.</small></div></div>`);
+    const streak = G.streak();
+    if (!G.activeDates().has(t) && streak > 0 && U.hour() >= 17) {
+      out.push(`<div class="banner fire">🔥 <div><b>Sua sequência de ${streak} ${streak === 1 ? 'dia' : 'dias'} acaba em <span data-countdown></span></b><small>Um hábito hoje mantém tudo vivo.</small></div></div>`);
+    }
+    if (P.push.state === 'off' && U.pref('notif-card-hidden') !== t && P.pushSupported()) {
+      out.push(`<div class="banner info">🔔 <div><b>Ative os lembretes</b><small>Para receber avisos mesmo com o app fechado.</small><div class="row gap" style="margin-top:8px"><button class="btn primary sm" data-action="push-on">Ativar</button><button class="btn ghost sm" data-action="notif-card-hide">Agora não</button></div></div></div>`);
+    }
+    return out.join('');
+  }
+
   function hoje() {
     const t = U.today();
     const streak = G.streak();
     const lit = G.activeDates().has(t);
     const lv = G.level(S.profile.xp);
+    const mode = U.pref('home', 'lista');
+    const habits = G.visibleHabits();
+    const doneN = habits.filter(h => G.isDone(h.id, t)).length;
+    const pct = habits.length ? doneN / habits.length : 0;
+    const pend = S.tasks.filter(x => !x.done && x.date <= t).sort(taskSort);
+    const tier = streak >= 100 ? 't4' : streak >= 30 ? 't3' : streak >= 7 ? 't2' : '';
     return `
       <header class="home-head">
         <div>
@@ -360,40 +482,96 @@
           <h1>${greeting()}, ${esc(firstName())}</h1>
         </div>
         <div class="top-chips">
-          <span class="top-chip ${lit ? 'lit' : ''}" title="Dias seguidos">🔥 ${streak}</span>
-          <span class="top-chip" title="${esc(lv.title)}">Nv ${lv.level}</span>
+          <span class="top-chip flame ${lit ? 'lit' : ''} ${tier}" title="Dias seguidos">🔥 ${streak}</span>
+          <span class="top-chip coin" title="Moedas">💰 <b data-coins>${S.profile.coins || 0}</b></span>
         </div>
       </header>
+      <div class="home-xp" title="${esc(lv.title)}"><span>Nv ${lv.level}</span><div class="bar"><div class="bar-fill" data-xpbar style="width:${(lv.into / lv.need * 100).toFixed(1)}%"></div></div><small>${lv.into}/${lv.need}</small></div>
+      ${banners()}
       ${P.reviewBanner()}
       ${P.riskBanner()}
-      ${!lit && streak > 0 ? `<p class="nudge soft">Um hábito hoje mantém seus ${streak} ${streak === 1 ? 'dia' : 'dias'} de sequência.</p>` : ''}
-      ${focusCard()}
-      ${dayStrip()}
+      ${giftCard()}
+      ${H.inNight() || H.nightSoon() ? H.nightCard() : ''}
+      ${mode === 'foco' ? `${focusCard()}${dayStrip()}` : `
+        ${habits.length ? `
+        <div class="today-head">
+          <div class="today-ring">${ring(pct, 64, 7)}<b>${Math.round(pct * 100)}%</b></div>
+          <div><h2>${doneN === habits.length ? 'Dia completo! 🌟' : `${doneN} de ${habits.length} hábitos`}</h2>
+            <p class="muted small">${doneN === habits.length ? 'Você fez tudo o que se propôs hoje.' : G.isHardMode() ? '🌧️ Modo dia difícil: só o essencial.' : 'Toque para marcar. Faça vários seguidos para fazer combo ⚡'}</p></div>
+        </div>
+        ${habitGroups(habits, t, false)}` : focusCard()}
+        ${habits.length && F.state().type === 'active' ? focusCard() : ''}
+        <div class="home-actions">
+          ${F.state().type === 'suggest' ? `<button class="pill" data-action="focus-start" data-id="${F.state().habit.id}">🚀 Começar: ${esc(F.state().habit.name.slice(0, 22))}</button>` : ''}
+          ${F.state().type === 'review' ? '<button class="pill on" data-action="review-open">🌙 Fechar o dia</button>' : ''}
+          <button class="pill" data-action="hard-mode">${G.isHardMode() ? '🌧️ Dia difícil ✓' : '🌧️ Dia difícil?'}</button>
+        </div>`}
+      ${questsCard()}
+      ${H.inNight() || H.nightSoon() ? '' : H.card()}
+      ${pend.length ? `
+        <div class="card mini-tasks">
+          <div class="section-head"><h3>📋 Tarefas</h3><button class="link-btn" data-action="tasks-go">ver todas ›</button></div>
+          ${pend.slice(0, 4).map(x => taskRow(x, t)).join('')}
+          ${pend.length > 4 ? `<p class="muted small">+ ${pend.length - 4} tarefas</p>` : ''}
+        </div>` : ''}
       ${checkinRow()}
+      <div class="mode-switch">
+        <button class="${mode === 'lista' ? 'on' : ''}" data-action="home-mode" data-v="lista">☰ Lista</button>
+        <button class="${mode === 'foco' ? 'on' : ''}" data-action="home-mode" data-v="foco">🎯 Uma coisa por vez</button>
+      </div>
       <div class="spacer"></div>`;
   }
 
   // ------------------------------------------------------------------ PLANO
   function plano() {
-    const t = U.today();
-    const habits = G.visibleHabits();
+    const today = U.today();
+    const t = ui.planDate && ui.planDate <= today ? ui.planDate : today;
+    const isToday = t === today;
+    const habits = G.visibleHabits(t);
+    const hidden = G.activeHabits().filter(h => !G.scheduledOn(h, t));
     const hard = G.isHardMode();
+    const doneN = habits.filter(h => G.isDone(h.id, t)).length;
     return `
       <header class="page-head"><div><h1>Plano</h1><p class="muted">Seus hábitos, metas e tarefas.</p></div></header>
 
       <section class="first">
+        <div class="day-nav">
+          <button class="icon-btn" data-action="plan-day" data-v="-1" aria-label="Dia anterior" ${t <= U.addDays(today, -14) ? 'disabled' : ''}>‹</button>
+          <div class="day-nav-mid">
+            <b class="cap">${isToday ? 'Hoje' : t === U.addDays(today, -1) ? 'Ontem' : U.fmtLong(t)}</b>
+            <small>${doneN}/${habits.length} feitos${!isToday ? ' · você pode corrigir dias passados' : ''}</small>
+          </div>
+          <button class="icon-btn" data-action="plan-day" data-v="1" aria-label="Próximo dia" ${isToday ? 'disabled' : ''}>›</button>
+        </div>
+        ${!isToday ? '<button class="link-btn center-link" data-action="plan-today">Voltar para hoje</button>' : ''}
         <div class="section-head">
           <h2>Hábitos</h2>
           <div class="row gap">
-            <button class="pill ${hard ? 'on' : ''}" data-action="hard-mode">🌧️ ${hard ? 'Dia difícil' : 'Dia difícil?'}</button>
+            ${isToday ? `<button class="pill ${hard ? 'on' : ''}" data-action="hard-mode">🌧️ ${hard ? 'Dia difícil' : 'Dia difícil?'}</button>` : ''}
             <button class="pill" data-action="habit-new" aria-label="Novo hábito">${ICONS.plus}</button>
           </div>
         </div>
-        ${hard ? `<p class="hard-note">Hoje, só o essencial. Fazer o mínimo já mantém sua sequência. 🤍</p>` : ''}
-        <div class="habits">
-          ${habits.length ? habits.map(h => habitItem(h, t)).join('') : `<p class="empty">Nenhum hábito ainda.</p>`}
+        ${hard && isToday ? `<p class="hard-note">Hoje, só o essencial. Fazer o mínimo já mantém sua sequência. 🤍</p>` : ''}
+        ${habits.length ? habitGroups(habits, t, false) : `<p class="empty">Nenhum hábito para este dia.</p>`}
+        ${hidden.length ? `<p class="muted small hint">Fora do dia: ${hidden.map(h => esc(h.icon)).join(' ')} (${hidden.length === 1 ? 'não é dia dele' : 'não é dia deles'})</p>` : ''}
+        <p class="muted small hint">Toque no ícone de um hábito para ver detalhes. Editar e reordenar: Perfil → Meus hábitos.</p>
+      </section>
+
+      <section>
+        <div class="section-head">
+          <h2>Tarefas</h2>
+          <button class="pill" data-action="pomodoro" data-v="25">⏱️ Focar</button>
         </div>
-        <p class="muted small hint">Para editar ou reordenar: Perfil → Meus hábitos.</p>
+        <form class="add-task" data-form="add-task">
+          <input class="input" id="taskInput" maxlength="200" placeholder="${ui.taskDate === 'amanha' ? 'Tarefa para amanhã…' : 'Adicionar tarefa…'}" autocomplete="off">
+          <button class="btn primary icon" aria-label="Adicionar">${ICONS.plus}</button>
+        </form>
+        <div class="task-opts">
+          <button class="pill ${ui.taskDate !== 'amanha' ? 'on' : ''}" data-action="task-date" data-v="hoje">Hoje</button>
+          <button class="pill ${ui.taskDate === 'amanha' ? 'on' : ''}" data-action="task-date" data-v="amanha">Amanhã</button>
+          <button class="pill ${ui.taskPrio ? 'on gold' : ''}" data-action="task-prio">★ Prioridade</button>
+        </div>
+        <div class="tasks">${taskList(today)}</div>
       </section>
 
       <section>
@@ -402,15 +580,6 @@
           <button class="pill on" data-action="goal-new">${ICONS.plus} Nova</button>
         </div>
         <div class="goals">${goalList()}</div>
-      </section>
-
-      <section>
-        <div class="section-head"><h2>Tarefas</h2></div>
-        <form class="add-task" data-form="add-task">
-          <input class="input" id="taskInput" maxlength="200" placeholder="Adicionar tarefa…" autocomplete="off">
-          <button class="btn primary icon" aria-label="Adicionar">${ICONS.plus}</button>
-        </form>
-        <div class="tasks">${taskList(t)}</div>
       </section>
       <div class="spacer"></div>`;
   }
@@ -439,7 +608,7 @@
   }
 
   // ------------------------------------------------------------------ MEDITAR
-  const med = { minutes: +U.store.get('raiz-med-min', 10) || 10, mode: 'mindfulness' };
+  const med = { minutes: +U.store.get('raiz-med-min', 10) || 10, mode: 'mindfulness', amb: U.store.get('raiz-amb', 'none') };
 
   function journalList() {
     const list = S.journal.slice().sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 6);
@@ -469,7 +638,28 @@
         <div class="durations">
           ${[3, 5, 10, 15, 20, 30].map(n => `<button class="dur ${med.minutes === n ? 'on' : ''}" data-action="med-min" data-v="${n}"><b>${n}</b><small>min</small></button>`).join('')}
         </div>
-        <button class="btn primary block big" data-action="med-start">Começar · ${med.minutes} min</button>
+        <p class="muted small" style="margin:12px 0 8px">Som ambiente</p>
+        <div class="amb-pick">
+          ${Object.entries(Snd.Amb.LIST).map(([k, n]) => `<button class="${med.amb === k ? 'on' : ''}" data-action="med-amb" data-v="${k}">${n}</button>`).join('')}
+          <button class="${med.amb === 'none' ? 'on' : ''}" data-action="med-amb" data-v="none">🔇 Silêncio</button>
+        </div>
+        ${med.amb !== 'none' ? `<button class="link-btn" data-action="amb-preview" data-v="${med.amb}">${Snd.Amb.current === med.amb ? '⏹ Parar prévia' : '▶ Ouvir prévia'}</button>` : ''}
+        <button class="btn primary block big" data-action="med-start" style="margin-top:10px">Começar · ${med.minutes} min</button>
+      </div>
+
+      <div class="card pomo-card">
+        <div class="section-head"><h3>⏱️ Foco profundo</h3>${G.flagged('pomodoro') ? '<span class="pill on">✓ hoje</span>' : ''}</div>
+        <p class="muted small">Timer de concentração com som ambiente (chuva, mar, ruído marrom…). Eu aviso quando acabar, mesmo com a tela apagada.</p>
+        <div class="durations pm-quick">${[15, 25, 45, 60].map(n => `<button class="dur" data-action="pomodoro" data-v="${n}"><b>${n}</b><small>min</small></button>`).join('')}</div>
+      </div>
+
+      <div class="card hrt-mini">
+        <div class="section-head"><h3>✋ Treino anti-coçar</h3><button class="link-btn" data-action="hrt-learn">Como funciona</button></div>
+        <p class="muted small">Resposta Concorrente (HRT): perceber a vontade, mãos nas coxas por 1 minuto e seguir a atividade.</p>
+        <div class="row gap" style="margin-top:12px">
+          <button class="btn hrt-btn" style="flex:1" data-action="hrt">✋ Vontade agora</button>
+          <button class="btn soft" style="flex:1" data-action="hrt-sim">🎓 Simular</button>
+        </div>
       </div>
 
       <div class="stat-row">
@@ -596,7 +786,7 @@
 
   function impulseBlock() {
     const since = U.addDays(U.today(), -29);
-    const recent = S.impulses.filter(i => i.date >= since);
+    const recent = S.impulses.filter(i => i.date >= since && i.kind !== H.KIND);
     if (!recent.length) return `<p class="empty">Quando sentir um impulso, toque no botão 🌊 <b>Impulso</b>. Seus registros aparecem aqui.</p>`;
     const won = recent.filter(i => i.resisted).length;
     const pct = won / recent.length;
@@ -642,8 +832,12 @@
     const seg = `
       <div class="seg tabs" role="tablist">
         <button class="${ui.progTab === 'resumo' ? 'on' : ''}" data-action="prog-tab" data-v="resumo">📈 Resumo</button>
-        <button class="${ui.progTab === 'conquistas' ? 'on' : ''}" data-action="prog-tab" data-v="conquistas">🏆 Conquistas · ${got}</button>
+        <button class="${ui.progTab === 'conquistas' ? 'on' : ''}" data-action="prog-tab" data-v="conquistas">🏆 ${got}/${G.ACH.length}</button>
+        <button class="${ui.progTab === 'loja' ? 'on' : ''}" data-action="prog-tab" data-v="loja">🛍️ Loja</button>
       </div>`;
+    if (ui.progTab === 'loja') {
+      return `<header class="page-head"><div><h1>Loja</h1><p class="muted">Gaste as moedas que você ganhou.</p></div></header>${seg}${loja()}`;
+    }
     if (ui.progTab === 'conquistas') {
       return `<header class="page-head"><div><h1>Progresso</h1><p class="muted">${got} de ${G.ACH.length} conquistas desbloqueadas</p></div></header>${seg}${conquistas(true)}`;
     }
@@ -651,6 +845,7 @@
       <header class="page-head"><div><h1>Progresso</h1><p class="muted">Cada quadradinho é uma vitória sua.</p></div></header>
       ${seg}
       ${header()}
+      ${weekCard()}
       <div class="tiles" style="margin-top:14px">
         <div class="tile"><span>🔥</span><b>${G.streak()}</b><small>sequência atual</small></div>
         <div class="tile"><span>🏅</span><b>${s.best}</b><small>melhor sequência</small></div>
@@ -658,13 +853,58 @@
         <div class="tile"><span>🌊</span><b>${s.resisted}</b><small>impulsos controlados</small></div>
         <div class="tile"><span>🌸</span><b>${s.medMinutes}</b><small>min meditados</small></div>
         <div class="tile"><span>⭐</span><b>${S.profile.xp}</b><small>XP total</small></div>
+        <div class="tile"><span>🌟</span><b>${s.perfectDays}</b><small>dias perfeitos</small></div>
+        <div class="tile"><span>🧰</span><b>${s.chests}</b><small>baús abertos</small></div>
+        <div class="tile"><span>⚡</span><b>${s.maxCombo}</b><small>maior combo</small></div>
       </div>
       <div class="card"><h3>Seus dias</h3>${heatmap()}</div>
       <div class="card"><h3>Humor e ansiedade · 14 dias</h3>${moodChart()}</div>
       <div class="card"><h3>O que te ajuda</h3>${insights()}</div>
       <div class="card"><h3>Hábitos · últimas 4 semanas</h3>${habitRates()}</div>
+      ${H.progressCard()}
       <div class="card"><h3>Impulsos · 30 dias</h3>${impulseBlock()}</div>
       <div class="card"><h3>Quando os impulsos aparecem</h3>${P.riskCard()}</div>
+      <div class="spacer"></div>`;
+  }
+
+  // Pontos da semana vs semana passada (você contra você mesmo)
+  function weekCard() {
+    const ws = U.weekStart(U.today());
+    const cur = G.weekPoints(ws), prev = G.weekPoints(U.addDays(ws, -7));
+    const best = Math.max(prev, ...[2, 3, 4, 5].map(k => G.weekPoints(U.addDays(ws, -7 * k))));
+    const diff = prev ? Math.round((cur - prev) / prev * 100) : null;
+    const max = Math.max(cur, prev, 1);
+    return `
+      <div class="card week-card">
+        <h3>🏁 Você vs. semana passada</h3>
+        <div class="vs">
+          <div class="vs-row"><span>Esta semana</span><div class="bar thick"><div class="bar-fill" style="width:${cur / max * 100}%"></div></div><b>${cur}</b></div>
+          <div class="vs-row past"><span>Semana passada</span><div class="bar thick"><div class="bar-fill" style="width:${prev / max * 100}%"></div></div><b>${prev}</b></div>
+        </div>
+        <p class="muted small">${cur > prev ? `🔥 Você já passou a semana passada${diff !== null ? ` (+${diff}%)` : ''}! ${cur >= best ? 'E é a sua melhor semana do último mês.' : ''}`
+          : `Faltam <b>${prev - cur + 1} pontos</b> para superar a semana passada.`}</p>
+      </div>`;
+  }
+
+  // ------------------------------------------------------------------ LOJA
+  function loja() {
+    const items = G.shopItems();
+    const acc = U.pref('accent', 'raiz');
+    return `
+      <div class="wallet"><span>💰</span><b data-coins>${S.profile.coins || 0}</b><small>moedas</small></div>
+      <p class="muted small center">Ganhe moedas fazendo hábitos, missões do dia, baús, foco e vencendo vontades.</p>
+      <div class="shop">
+        ${items.map(i => `
+          <div class="shop-item ${i.owned ? 'owned' : ''}">
+            <span class="shop-ic" ${i.swatch ? `style="background:rgb(${i.swatch} / .18);color:rgb(${i.swatch})"` : ''}>${i.icon}</span>
+            <div class="shop-body"><b>${esc(i.name)}</b><small>${esc(i.desc)}</small></div>
+            ${i.owned ? `<button class="pill ${acc === i.id.slice(6) ? 'on' : ''}" data-action="accent" data-v="${i.id.slice(6)}">${acc === i.id.slice(6) ? 'Usando' : 'Usar'}</button>`
+              : `<button class="buy ${(S.profile.coins || 0) >= i.price ? 'can' : ''}" data-action="buy" data-id="${i.id}" ${i.disabled ? 'disabled' : ''}>${i.disabled ? 'Máx.' : `💰 ${i.price}`}</button>`}
+          </div>`).join('')}
+      </div>
+      <div class="card"><h3>🎨 Cores liberadas</h3>
+        <div class="swatches">${Object.entries(G.THEMES).map(([k, t]) => `<button class="swatch ${acc === k ? 'on' : ''} ${G.themeUnlocked(k) ? '' : 'locked'}" style="--sw:${t.rgb}" data-action="${G.themeUnlocked(k) ? 'accent' : 'buy'}" data-v="${k}" data-id="theme:${k}" title="${esc(t.name)}">${G.themeUnlocked(k) ? '' : '🔒'}</button>`).join('')}</div>
+      </div>
       <div class="spacer"></div>`;
   }
 
@@ -705,10 +945,23 @@
         <label class="field compact"><span>Como quer ser chamado?</span>
           <div class="row gap"><input class="input" id="nameInput" maxlength="40" value="${esc(S.profile.display_name || '')}"><button class="btn soft" data-action="save-name">Salvar</button></div>
         </label>
-        <label class="switch-row">
-          <span>🔊 Sons de conquista</span>
-          <input type="checkbox" id="soundToggle" ${U.soundOn() ? 'checked' : ''}>
-        </label>
+      </div>
+
+      <div class="card">
+        <h3>🎨 Aparência e sensações</h3>
+        <p class="muted small">Tema</p>
+        <div class="seg small">${[['dark', '🌙 Escuro'], ['light', '☀️ Claro'], ['auto', '⚙️ Automático']].map(([k, n]) => `<button class="${U.pref('theme', 'dark') === k ? 'on' : ''}" data-action="theme-mode" data-v="${k}">${n}</button>`).join('')}</div>
+        <p class="muted small">Cor</p>
+        <div class="swatches">${Object.entries(G.THEMES).map(([k, t]) => `<button class="swatch ${U.pref('accent', 'raiz') === k ? 'on' : ''} ${G.themeUnlocked(k) ? '' : 'locked'}" style="--sw:${t.rgb}" data-action="${G.themeUnlocked(k) ? 'accent' : 'prog-tab'}" data-v="${G.themeUnlocked(k) ? k : 'loja'}" title="${esc(t.name)}">${G.themeUnlocked(k) ? '' : '🔒'}</button>`).join('')}</div>
+        <label class="switch-row"><span>🔊 Sons</span><input type="checkbox" id="soundToggle" ${U.soundOn() ? 'checked' : ''}></label>
+        <label class="field compact"><span>Volume</span><input type="range" id="volRange" min="0" max="100" value="${Math.round(Snd.volume() * 100)}"></label>
+        <label class="switch-row"><span>📳 Vibração</span><input type="checkbox" id="hapticsToggle" ${U.pref('haptics', 'on') !== 'off' ? 'checked' : ''}></label>
+        <label class="switch-row"><span>🎉 Confetes e comemorações</span><input type="checkbox" id="confettiToggle" ${U.celebrationsOn() ? 'checked' : ''}></label>
+        <p class="muted small">Tela inicial</p>
+        <div class="seg small">
+          <button class="${U.pref('home', 'lista') === 'lista' ? 'on' : ''}" data-action="home-mode" data-v="lista">☰ Lista completa</button>
+          <button class="${U.pref('home', 'lista') === 'foco' ? 'on' : ''}" data-action="home-mode" data-v="foco">🎯 Uma coisa por vez</button>
+        </div>
       </div>
 
       <div class="card">
@@ -717,12 +970,18 @@
           ${hs.map((h, i) => `
             <div class="ha">
               <span class="ha-ic">${esc(h.icon)}</span>
-              <div class="ha-body"><b>${esc(h.name)}</b><small class="muted">${h.target_per_week}x por semana${h.essential ? ' · essencial' : ''}</small></div>
+              <div class="ha-body"><b>${esc(h.name)}</b><small class="muted">${G.daysLabel(h)} · ${h.target_per_week}x/sem${G.isCounter(h) ? ` · ${G.goalOf(h)} ${esc(h.unit || 'vezes')}` : ''}${h.remind_at ? ` · ⏰ ${esc(h.remind_at)}` : ''}${h.essential ? ' · essencial' : ''}</small></div>
               <button class="icon-btn subtle" data-action="habit-up" data-id="${h.id}" ${i === 0 ? 'disabled' : ''} aria-label="Subir">↑</button>
               <button class="icon-btn subtle" data-action="habit-edit" data-id="${h.id}" aria-label="Editar">${ICONS.edit}</button>
             </div>`).join('') || '<p class="empty">Nenhum hábito ainda.</p>'}
         </div>
         <p class="muted small">Hábitos <b>essenciais</b> são os que aparecem no modo "Dia difícil".</p>
+        ${S.habits.some(h => h.archived) ? '<button class="link-btn" data-action="habit-archived">Ver hábitos arquivados</button>' : ''}
+      </div>
+
+      <div class="card">
+        <div class="section-head"><h3>✋ Treino anti-coçar</h3><button class="pill" data-action="hrt-settings">Ajustes</button></div>
+        <p class="muted small">Resposta: <b>${esc(H.cfg().response)}</b> · ${H.cfg().seconds}s${H.cfg().remind ? ` · lembrete a cada ${H.cfg().remindEvery} min` : ''}</p>
       </div>
 
       <div class="card">
@@ -730,6 +989,9 @@
         <ul class="how">
           <li>🔥 <b>Sequência:</b> conclua pelo menos 1 hábito por dia.</li>
           <li>🛡️ <b>Protetores:</b> a cada 7 dias seguidos você ganha 1 (máx. 3). Se falhar um dia, ele salva sua sequência sozinho.</li>
+          <li>💰 <b>Moedas:</b> hábito +${G.COINS.habit} · missões · baús · dia perfeito +${G.COINS.perfect} · subir de nível +${G.COINS.level}. Gaste na loja (Progresso → Loja).</li>
+          <li>📜 <b>Missões:</b> 3 por dia. Complete todas para abrir um baú surpresa (pode vir até um lendário 👑).</li>
+          <li>⚡ <b>Combo:</b> marque hábitos em sequência (até 3 min entre eles) para ganhar XP extra.</li>
           <li>⭐ <b>XP:</b> hábito +${G.XP.habit} · impulso controlado +${G.XP.resisted} · deslize registrado +${G.XP.slip} · escrita +${G.XP.journal} · tarefa +${G.XP.task} · check-in +${G.XP.checkin} · meditação +${G.XP.medBase} +1/min +1 por volta ao foco · marco de meta +${G.XP.milestone} · conquista +${G.XP.achievement}</li>
           <li>🌧️ <b>Dia difícil:</b> mostra só os hábitos essenciais. Fazer o mínimo também conta.</li>
           <li>🤖 <b>Automático:</b> meditar, escrever ou resistir a um impulso já marcam o hábito correspondente.</li>
@@ -762,7 +1024,9 @@
       </div>
 
       <div class="card">
-        <button class="btn soft block" data-action="export">⬇️ Baixar todos os meus dados</button>
+        <button class="btn soft block" data-action="export">⬇️ Baixar todos os meus dados (JSON)</button>
+        <button class="btn soft block" data-action="export-csv">📊 Baixar histórico de hábitos (planilha)</button>
+        <button class="btn ghost block" data-action="shortcuts">⌨️ Atalhos de teclado</button>
         <button class="btn ghost block danger-text" data-action="logout">Sair da conta</button>
       </div>
       <p class="muted small center">Raiz · feito para você crescer 🌱</p>
@@ -770,35 +1034,71 @@
   }
 
   // ------------------------------------------------------------------ Editor de hábito
-  const EMOJIS = ['🧘', '🚶', '🏋️', '🏃', '🌊', '🧭', '✍️', '😴', '💧', '📖', '🥗', '🙏', '🧹', '📵', '🚭', '🌞', '🎯', '🧠', '🌬️', '🛁', '🌙', '❤️', '🚴', '🤸', '📞', '⏳', '🚫', '🤝'];
+  const EMOJIS = ['✋', '🧴', '💊', '✂️', '🧘', '🚶', '🏋️', '🏃', '🌊', '🧭', '✍️', '😴', '💧', '📖', '🥗', '🙏', '🧹', '📵', '🚭', '🌞', '🎯', '🧠', '🌬️', '🛁', '🌙', '❤️', '🚴', '🤸', '📞', '⏳', '🚫', '🤝'];
 
   // Sugestões (nomes genéricos: o código é público; personalize depois)
   const TEMPLATES = {
-    'Corpo': [['🚶', '30 min de caminhada ou exercício'], ['🏋️', 'Treino de força'], ['🤸', 'Alongamento 10 min'], ['💧', 'Beber 2L de água'], ['🥗', 'Uma refeição saudável'], ['🌞', '15 min de sol']],
-    'Mente': [['🧘', 'Meditação mindfulness'], ['✍️', 'Escrita terapêutica (até 10 min)'], ['📖', 'Ler 10 páginas'], ['🙏', 'Anotar 3 gratidões'], ['🌬️', 'Respiração consciente 3x no dia']],
+    'Corpo': [['🚶', '30 min de caminhada ou exercício'], ['🏋️', 'Treino de força'], ['🤸', 'Alongamento 10 min'], ['💧', 'Beber água', 8, 'copos'], ['🥗', 'Uma refeição saudável'], ['🌞', '15 min de sol']],
+    'Pele': [['✋', 'Treino anti-coçar (resposta concorrente)'], ['🧴', 'Hidratei a pele', 2, 'vezes'], ['💊', 'Fiz o tratamento da pele'], ['✂️', 'Unhas curtas e lixadas']],
+    'Mente': [['🧘', 'Meditação mindfulness'], ['✍️', 'Escrita terapêutica (até 10 min)'], ['📖', 'Ler', 10, 'páginas'], ['🙏', 'Anotar 3 gratidões'], ['🌬️', 'Respiração consciente 3x no dia']],
     'Autocontrole': [['🌊', 'Não obedeci automaticamente aos impulsos'], ['🧭', 'Evitei os gatilhos da compulsão'], ['⏳', 'Esperei 10 min antes de ceder a uma vontade'], ['📵', 'Celular fora do quarto à noite'], ['🚫', 'Sem redes sociais antes das 10h']],
     'Sono': [['😴', 'Mantive horário regular de sono'], ['🌙', 'Sem telas 1h antes de dormir']],
     'Vida': [['🧹', 'Arrumei meu espaço'], ['📞', 'Falei com alguém de quem gosto'], ['🎯', 'Fiz 1 tarefa importante'], ['🤝', 'Fiz algo gentil por alguém']]
   };
 
+  const COLORS = ['', '#34d399', '#38bdf8', '#a78bfa', '#f472b6', '#fb923c', '#facc15', '#f87171'];
+  const DAYN = ['S', 'T', 'Q', 'Q', 'S', 'S', 'D'];
+
   function habitEditor(h) {
     const isNew = !h;
     h = h || { name: '', icon: '✨', target_per_week: 7, essential: false };
-    const st = { icon: h.icon, target: h.target_per_week, essential: h.essential };
+    const st = {
+      icon: h.icon, target: h.target_per_week, essential: h.essential,
+      days: h.days && h.days.length ? h.days.slice() : [1, 2, 3, 4, 5, 6, 7],
+      tod: h.time_of_day || '', kind: h.kind || (G.isAvoid(h) && h.name ? 'avoid' : 'do'),
+      goal: h.daily_goal || 1, color: h.color || ''
+    };
+    const v5 = DB.v5;
     const m = U.modal(`
       <h2>${isNew ? 'Novo hábito' : 'Editar hábito'}</h2>
       ${isNew ? `<details class="templates" open>
         <summary>💡 Sugestões</summary>
         ${Object.entries(TEMPLATES).map(([cat, list]) => `
           <p class="tpl-cat">${cat}</p>
-          <div class="chips">${list.map(([ic, n]) => `<button type="button" class="chip" data-ti="${ic}" data-tn="${esc(n)}">${ic} ${esc(n)}</button>`).join('')}</div>`).join('')}
+          <div class="chips">${list.map(([ic, n, g, u]) => `<button type="button" class="chip" data-ti="${ic}" data-tn="${esc(n)}" data-tg="${g || 1}" data-tu="${esc(u || '')}">${ic} ${esc(n)}</button>`).join('')}</div>`).join('')}
       </details>` : ''}
       <label class="field"><span>Nome</span><input class="input" id="hName" maxlength="80" value="${esc(h.name)}" placeholder="Escreva o seu ou escolha uma sugestão"></label>
       <div class="field"><span>Ícone</span>
         <div class="emoji-grid">${EMOJIS.map(e => `<button type="button" class="${e === st.icon ? 'on' : ''}" data-e="${e}">${e}</button>`).join('')}</div>
       </div>
+      ${v5 ? `
+      <div class="field"><span>Tipo</span>
+        <div class="seg small" id="hKind">
+          <button type="button" data-k="do" class="${st.kind === 'do' ? 'on' : ''}">✅ Fazer algo</button>
+          <button type="button" data-k="avoid" class="${st.kind === 'avoid' ? 'on' : ''}">🛡️ Evitar / manter</button>
+        </div>
+        <small class="muted" id="hKindHelp"></small>
+      </div>
+      <div class="field"><span>Dias da semana</span>
+        <div class="days-pick" id="hDays">${DAYN.map((d, i) => `<button type="button" data-d="${i + 1}" class="${st.days.includes(i + 1) ? 'on' : ''}">${d}</button>`).join('')}</div>
+        <div class="chips small-chips"><button type="button" class="chip" data-preset="all">Todo dia</button><button type="button" class="chip" data-preset="week">Dias úteis</button><button type="button" class="chip" data-preset="end">Fim de semana</button></div>
+      </div>
+      <div class="field"><span>Período do dia</span>
+        <div class="seg small" id="hTod">${[['', '🕐 Qualquer'], ['manha', '🌅 Manhã'], ['tarde', '☀️ Tarde'], ['noite', '🌙 Noite']].map(([k, n]) => `<button type="button" data-t="${k}" class="${st.tod === k ? 'on' : ''}">${n}</button>`).join('')}</div>
+      </div>
+      <div class="field"><span>Quantidade por dia</span>
+        <div class="row gap">
+          <div class="stepper"><button type="button" id="hGm">−</button><b id="hGv">${st.goal}</b><button type="button" id="hGp">+</button></div>
+          <input class="input" id="hUnit" maxlength="20" placeholder="unidade (copos, páginas…)" value="${esc(h.unit || '')}" ${st.goal > 1 ? '' : 'hidden'}>
+        </div>
+        <small class="muted">1 = marcar como feito. Mais que 1 = contador (ex.: 8 copos de água).</small>
+      </div>
+      <label class="field"><span>⏰ Lembrete (opcional)</span><input class="input" type="time" id="hRemind" value="${esc(h.remind_at || '')}"></label>
+      <div class="field"><span>Cor</span>
+        <div class="swatches" id="hColor">${COLORS.map(c => `<button type="button" class="swatch ${st.color === c ? 'on' : ''} ${c ? '' : 'none'}" style="${c ? `background:${c}` : ''}" data-c="${c}">${c ? '' : '∅'}</button>`).join('')}</div>
+      </div>` : `<p class="muted small banner warn" style="margin-bottom:14px">🛠️ Rode o <code>schema.sql</code> atualizado no Supabase para liberar: dias da semana, período, quantidade, lembrete e cor.</p>`}
       <div class="field"><span>Meta: <b id="hTargetVal">${st.target}</b>x por semana</span>
-        <div class="seg small">${[1, 2, 3, 4, 5, 6, 7].map(n => `<button type="button" data-n="${n}" class="${n === st.target ? 'on' : ''}">${n}</button>`).join('')}</div>
+        <div class="seg small" id="hTarget">${[1, 2, 3, 4, 5, 6, 7].map(n => `<button type="button" data-n="${n}" class="${n === st.target ? 'on' : ''}">${n}</button>`).join('')}</div>
       </div>
       <label class="switch-row"><span>Essencial <small class="muted">(aparece no dia difícil)</small></span><input type="checkbox" id="hEss" ${st.essential ? 'checked' : ''}></label>
       <div class="row gap end">
@@ -806,7 +1106,9 @@
         <button class="btn ghost" data-close>Cancelar</button>
         <button class="btn primary" id="hSave">Salvar</button>
       </div>`, { cls: 'sheet' });
-    const $ = s => m.el.querySelector(s);
+    const $ = q => m.el.querySelector(q);
+    const syncKind = () => { if ($('#hKindHelp')) $('#hKindHelp').textContent = st.kind === 'avoid' ? 'Confirmado à noite, no "Fechar o dia" (ex.: não fumei, evitei gatilhos).' : 'Algo que você começa e faz (ex.: caminhar, meditar, ler).'; };
+    syncKind();
     $('.emoji-grid').onclick = e => {
       const b = e.target.closest('button'); if (!b) return;
       st.icon = b.dataset.e;
@@ -816,20 +1118,60 @@
       const b = e.target.closest('[data-tn]'); if (!b) return;
       $('#hName').value = b.dataset.tn;
       st.icon = b.dataset.ti;
+      if (v5) {
+        st.goal = +b.dataset.tg || 1; $('#hGv').textContent = st.goal;
+        $('#hUnit').value = b.dataset.tu; $('#hUnit').hidden = st.goal <= 1;
+        st.kind = G.isAvoid({ name: b.dataset.tn }) ? 'avoid' : 'do';
+        m.el.querySelectorAll('#hKind button').forEach(x => x.classList.toggle('on', x.dataset.k === st.kind));
+        syncKind();
+      }
       m.el.querySelectorAll('.emoji-grid button').forEach(x => x.classList.toggle('on', x.dataset.e === st.icon));
       m.el.querySelectorAll('.templates .chip').forEach(x => x.classList.toggle('on', x === b));
       $('.templates').open = false;
       $('#hName').focus();
     };
-    $('.seg').onclick = e => {
+    const segPick = (sel, attr, fn) => { const el = $(sel); if (!el) return; el.onclick = e => {
       const b = e.target.closest('button'); if (!b) return;
-      st.target = +b.dataset.n; $('#hTargetVal').textContent = st.target;
-      m.el.querySelectorAll('.seg button').forEach(x => x.classList.toggle('on', x === b));
-    };
+      fn(b.dataset[attr]);
+      el.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+      U.play('tap');
+    }; };
+    segPick('#hTarget', 'n', v => { st.target = +v; $('#hTargetVal').textContent = st.target; });
+    segPick('#hKind', 'k', v => { st.kind = v; syncKind(); });
+    segPick('#hTod', 't', v => { st.tod = v; });
+    if ($('#hDays')) {
+      const drawDays = () => m.el.querySelectorAll('#hDays button').forEach(x => x.classList.toggle('on', st.days.includes(+x.dataset.d)));
+      $('#hDays').onclick = e => {
+        const b = e.target.closest('button'); if (!b) return;
+        const d = +b.dataset.d;
+        st.days = st.days.includes(d) ? st.days.filter(x => x !== d) : st.days.concat(d);
+        if (!st.days.length) st.days = [d];
+        drawDays(); U.play('tap');
+      };
+      m.el.querySelector('.small-chips').onclick = e => {
+        const b = e.target.closest('[data-preset]'); if (!b) return;
+        st.days = b.dataset.preset === 'all' ? [1, 2, 3, 4, 5, 6, 7] : b.dataset.preset === 'week' ? [1, 2, 3, 4, 5] : [6, 7];
+        if (st.target > st.days.length) { st.target = st.days.length; $('#hTargetVal').textContent = st.target; m.el.querySelectorAll('#hTarget button').forEach(x => x.classList.toggle('on', +x.dataset.n === st.target)); }
+        drawDays(); U.play('tap');
+      };
+      const step = n => { st.goal = Math.max(1, Math.min(100, st.goal + n)); $('#hGv').textContent = st.goal; $('#hUnit').hidden = st.goal <= 1; U.play('tap'); };
+      $('#hGm').onclick = () => step(-1);
+      $('#hGp').onclick = () => step(1);
+      $('#hColor').onclick = e => {
+        const b = e.target.closest('[data-c]'); if (!b) return;
+        st.color = b.dataset.c;
+        m.el.querySelectorAll('#hColor .swatch').forEach(x => x.classList.toggle('on', x === b));
+      };
+    }
     $('#hSave').onclick = async () => {
       const name = $('#hName').value.trim();
       if (!name) { $('#hName').focus(); return; }
       const row = { name, icon: st.icon, target_per_week: st.target, essential: $('#hEss').checked };
+      if (v5) Object.assign(row, {
+        kind: st.kind, days: st.days.length === 7 ? null : st.days.sort(), time_of_day: st.tod || null,
+        daily_goal: st.goal, unit: st.goal > 1 ? ($('#hUnit').value.trim() || null) : null,
+        remind_at: $('#hRemind').value || null, color: st.color || null
+      });
       try {
         if (isNew) {
           row.position = Math.max(-1, ...S.habits.map(x => x.position)) + 1;
@@ -838,7 +1180,9 @@
         } else {
           Object.assign(h, await DB.update('habits', h.id, row));
         }
-        m.close(); App.render(); U.toast('Hábito salvo ✓', 'success');
+        G.reindex();
+        m.close(); App.render(); U.play('task'); U.toast('Hábito salvo ✓', 'success');
+        if (row.remind_at && P.push.state !== 'on' && !N.granted()) U.toast('🔔 Para receber o lembrete, ative os lembretes em Perfil.', 'info', { action: 'Ativar', onAction: () => P.enablePush() });
       } catch (e) { console.error(e); U.toast('Erro ao salvar o hábito.', 'error'); }
     };
     if (!isNew) $('#hDel').onclick = async () => {
@@ -848,5 +1192,75 @@
     };
   }
 
-  window.V = { hoje, plano, checkinSheet, ui, meditar, progresso, conquistas, perfil, header, habitEditor, goalEditor, ci, med, period };
+  // Detalhes de um hábito: sequência, recorde, taxa e calendário de 12 semanas
+  function habitDetail(h) {
+    if (!h) return;
+    const t = U.today();
+    const streak = G.habitStreak(h), best = G.habitBest(h);
+    const total = S.logs.filter(l => l.habit_id === h.id && G.isDone(h.id, l.date)).length;
+    let sched = 0, done = 0;
+    for (let i = 0; i < 30; i++) { const d = U.addDays(t, -i); if (G.scheduledOn(h, d)) { sched++; if (G.isDone(h.id, d)) done++; } }
+    const rate = sched ? Math.round(done / sched * 100) : 0;
+    const weeks = 12, start = U.addDays(U.weekStart(t), -7 * (weeks - 1));
+    let cols = '';
+    for (let w = 0; w < weeks; w++) {
+      let cells = '';
+      for (let d = 0; d < 7; d++) {
+        const k = U.addDays(start, w * 7 + d);
+        if (k > t) { cells += '<i class="future"></i>'; continue; }
+        const a = G.amount(h.id, k);
+        const lvl = G.isDone(h.id, k) ? 4 : a > 0 ? 2 : 0;
+        cells += `<i class="l${lvl} ${G.scheduledOn(h, k) ? '' : 'off'}" title="${U.fmtShort(k)}${a ? `: ${a}` : ''}"></i>`;
+      }
+      cols += `<div class="hm-col">${cells}</div>`;
+    }
+    const m = U.modal(`
+      <div class="hd-head"><span class="hd-ic" ${h.color ? `style="background:${esc(h.color)}22"` : ''}>${esc(h.icon)}</span><div><h2>${esc(h.name)}</h2>
+        <p class="muted small">${G.daysLabel(h)}${h.time_of_day ? ' · ' + PERIODS[h.time_of_day].join(' ') : ''}${G.isCounter(h) ? ` · ${G.goalOf(h)} ${esc(h.unit || 'vezes')}/dia` : ''}${h.remind_at ? ` · ⏰ ${esc(h.remind_at)}` : ''}</p></div></div>
+      <div class="tiles">
+        <div class="tile"><span>🔥</span><b>${streak}</b><small>sequência</small></div>
+        <div class="tile"><span>🏅</span><b>${best}</b><small>recorde</small></div>
+        <div class="tile"><span>📈</span><b>${rate}%</b><small>últimos 30 dias</small></div>
+      </div>
+      <div class="card flat"><h3>Últimas 12 semanas</h3><div class="heatmap">${cols}</div></div>
+      <p class="muted small center">Feito ${U.plural(total, 'vez', 'vezes')} no total.</p>
+      <div class="row gap end" style="margin-top:12px">
+        <button class="btn soft" id="hdEdit">Editar</button>
+        ${!G.isAvoid(h) ? '<button class="btn primary" id="hdStart">Começar agora</button>' : ''}
+      </div>`, { cls: 'sheet' });
+    m.el.querySelector('#hdEdit').onclick = () => { m.close(); setTimeout(() => habitEditor(h), 220); };
+    const st = m.el.querySelector('#hdStart');
+    if (st) st.onclick = () => { m.close(); setTimeout(() => F.start(h.id), 220); };
+  }
+
+  function archivedSheet() {
+    const list = S.habits.filter(h => h.archived);
+    const m = U.modal(`
+      <h2>Hábitos arquivados</h2>
+      ${list.map(h => `<div class="ha"><span class="ha-ic">${esc(h.icon)}</span><div class="ha-body"><b>${esc(h.name)}</b></div><button class="btn soft" data-un="${h.id}">Restaurar</button></div>`).join('') || '<p class="empty">Nada arquivado.</p>'}
+      <button class="btn ghost block" data-close style="margin-top:12px">Fechar</button>`, { cls: 'sheet' });
+    m.el.onclick = async e => {
+      const b = e.target.closest('[data-un]'); if (!b) return;
+      const h = S.habits.find(x => x.id === b.dataset.un);
+      try { Object.assign(h, await DB.update('habits', h.id, { archived: false })); b.closest('.ha').remove(); App.render(); U.toast(`${esc(h.icon)} Restaurado`, 'success'); }
+      catch (err) { console.error(err); U.toast('Erro ao restaurar.', 'error'); }
+    };
+  }
+
+  function shortcutsSheet() {
+    U.modal(`
+      <h2>⌨️ Atalhos</h2>
+      <ul class="how keys">
+        <li><kbd>1</kbd>–<kbd>5</kbd> trocar de aba</li>
+        <li><kbd>C</kbd> vontade de coçar (treino anti-coçar)</li>
+        <li><kbd>I</kbd> impulso (surfar a onda)</li>
+        <li><kbd>N</kbd> nova tarefa</li>
+        <li><kbd>H</kbd> novo hábito</li>
+        <li><kbd>F</kbd> foco profundo (25 min)</li>
+        <li><kbd>Esc</kbd> fechar janela</li>
+      </ul>
+      <button class="btn primary block" data-close>Ok</button>`, { cls: 'small' });
+  }
+
+  window.V = { hoje, plano, checkinSheet, ui, meditar, progresso, conquistas, perfil, header, habitEditor, habitDetail, archivedSheet, shortcutsSheet, taskEditor, goalEditor, ci, med, period };
 })();

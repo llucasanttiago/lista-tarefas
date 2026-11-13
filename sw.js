@@ -1,10 +1,10 @@
 // Service worker: deixa o app instalável e abrindo rápido.
 // Estratégia "rede primeiro": sempre pega a versão nova; usa o cache só offline.
-const CACHE = 'raiz-v5';
+const CACHE = 'raiz-v6';
 const SHELL = [
   './', './index.html', './css/style.css', './manifest.webmanifest', './icons/icon.svg',
-  './js/config.js', './js/utils.js', './js/gamification.js', './js/data.js',
-  './js/exercises.js', './js/focus.js', './js/plan.js', './js/views.js', './js/app.js'
+  './js/config.js', './js/sound.js', './js/utils.js', './js/gamification.js', './js/data.js', './js/notify.js',
+  './js/exercises.js', './js/focus.js', './js/plan.js', './js/hrt.js', './js/views.js', './js/app.js'
 ];
 
 self.addEventListener('install', e => {
@@ -27,6 +27,7 @@ self.addEventListener('push', e => {
     icon: './icons/icon-192.png',
     badge: './icons/icon-192.png',
     data: { url: d.url || './' },
+    vibrate: [80, 60, 80],
     renotify: true
   }));
 });

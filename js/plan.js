@@ -36,6 +36,7 @@
         <button class="btn sos-btn block" id="ppImp" style="margin-top:16px">🌊 Estou com um impulso agora</button>
         <button class="btn soft block" id="ppEdit">Editar meu plano</button>
         <button class="btn ghost block" data-close>Fechar</button>`, { cls: 'sheet' });
+      G.flag('planRead');
       m.el.querySelector('#ppImp').onclick = () => { m.close(); setTimeout(X.openImpulse, 220); };
       m.el.querySelector('#ppEdit').onclick = () => { m.close(); setTimeout(P.editPlan, 220); };
     },
@@ -311,7 +312,7 @@
     },
 
     defaults() {
-      return { enabled: false, morning: '08:00', evening: '21:30', risk: true, focus: true, tz: Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Sao_Paulo' };
+      return { enabled: false, morning: '08:00', evening: '21:30', risk: true, focus: true, streak: true, streakAt: '20:30', habits: true, showNames: false, tz: Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Sao_Paulo' };
     },
     settings() { return Object.assign(P.defaults(), S.profile.reminders || {}); },
 
@@ -331,7 +332,8 @@
           user_id: S.user.id, endpoint: j.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth, user_agent: navigator.userAgent.slice(0, 200)
         }, 'endpoint');
         const r = P.risk();
-        await DB.updateProfile({ reminders: Object.assign(P.settings(), { enabled: true, riskHour: r.window ? r.window.start : null }) });
+        const c = H.cfg();
+        await DB.updateProfile({ reminders: Object.assign(P.settings(), { enabled: true, riskHour: r.window ? r.window.start : null, hrtNight: { on: !!c.night, from: c.nightFrom, to: c.nightTo, every: c.nightEvery } }) });
         P.push.state = 'on';
         U.toast('🔔 Lembretes ativados neste aparelho.', 'success');
         App.render();
@@ -357,8 +359,19 @@
     },
 
     async saveReminder(patch) {
-      try { await DB.updateProfile({ reminders: Object.assign(P.settings(), patch) }); U.toast('Lembrete salvo ✓', 'success'); }
+      try { await DB.updateProfile({ reminders: Object.assign(P.settings(), patch) }); U.toast('Lembrete salvo ✓', 'success'); U.play('pop'); }
       catch (e) { console.error(e); U.toast('Erro ao salvar.', 'error'); }
+    },
+    // Mantém o fuso horário em dia (o servidor usa para saber "que horas são aí")
+    async syncHabitReminders() {
+      const r = S.profile.reminders;
+      if (!r || !r.enabled) return;
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || r.tz;
+      const c = H.cfg();
+      const hrtNight = { on: !!c.night, from: c.nightFrom, to: c.nightTo, every: c.nightEvery };
+      if (r.tz !== tz || JSON.stringify(r.hrtNight) !== JSON.stringify(hrtNight)) {
+        await DB.updateProfile({ reminders: Object.assign({}, r, { tz, hrtNight }) }).catch(console.error);
+      }
     },
 
     async testPush() {
@@ -394,30 +407,44 @@
 
     remindersCard() {
       const st = P.push.state, r = P.settings();
-      let inner;
-      if (st === 'ios-install') {
-        inner = `<p class="muted small">No iPhone, os lembretes só funcionam com o app instalado: toque em <b>Compartilhar → Adicionar à Tela de Início</b> e abra o Raiz pelo ícone.</p>`;
-      } else if (st === 'unsupported') {
-        inner = `<p class="muted small">Este navegador não suporta lembretes. ${location.protocol !== 'https:' ? 'Abra o app pelo endereço do GitHub Pages.' : 'Tente pelo Chrome.'}</p>`;
-      } else if (st === 'on') {
-        inner = `
+      const nHab = G.activeHabits().filter(h => h.remind_at).length;
+      const common = `
           <div class="rem-grid">
             <label>🌅 Bom dia<input type="time" class="input" data-rem="morning" value="${esc(r.morning || '')}"></label>
             <label>🌙 Fechar o dia<input type="time" class="input" data-rem="evening" value="${esc(r.evening || '')}"></label>
+            <label>🔥 Sequência em risco<input type="time" class="input" data-rem="streakAt" value="${esc(r.streakAt || '20:30')}"></label>
           </div>
-          <label class="switch-row"><span>⏰ Avisar antes do meu horário de risco</span><input type="checkbox" data-rem-b="risk" ${r.risk ? 'checked' : ''}></label>
+          <label class="switch-row"><span>🔥 Avisar se a sequência estiver em risco <small class="muted">(só se ainda não fez nada no dia)</small></span><input type="checkbox" data-rem-b="streak" ${r.streak !== false ? 'checked' : ''}></label>
+          <label class="switch-row"><span>⏰ Lembrete de cada hábito <small class="muted">(${nHab ? U.plural(nHab, 'hábito com horário', 'hábitos com horário') : 'defina o horário ao editar um hábito'})</small></span><input type="checkbox" data-rem-b="habits" ${r.habits !== false ? 'checked' : ''}></label>
+          <label class="switch-row"><span>⚠️ Avisar antes do meu horário de risco</span><input type="checkbox" data-rem-b="risk" ${r.risk ? 'checked' : ''}></label>
           <label class="switch-row"><span>🤍 Perguntar "como foi?" depois de começar algo</span><input type="checkbox" data-rem-b="focus" ${r.focus !== false ? 'checked' : ''}></label>
-          <p class="muted small">Os textos das notificações são sempre genéricos, sem nada pessoal na tela bloqueada.</p>
+          <label class="switch-row"><span>👁️ Mostrar o nome do hábito na notificação <small class="muted">(aparece na tela bloqueada)</small></span><input type="checkbox" data-rem-b="showNames" ${r.showNames ? 'checked' : ''}></label>`;
+      let inner;
+      if (st === 'ios-install') {
+        inner = `<p class="muted small">No iPhone, os lembretes com o app fechado só funcionam com o app instalado: toque em <b>Compartilhar → Adicionar à Tela de Início</b> e abra o Raiz pelo ícone.</p>`;
+      } else if (st === 'unsupported') {
+        inner = `<p class="muted small">Lembretes com o app fechado não funcionam aqui. ${location.protocol !== 'https:' ? 'Abra o app pelo endereço do GitHub Pages (https).' : 'Tente pelo Chrome.'}</p>`;
+      } else if (st === 'on') {
+        inner = `
+          <p class="ok-line">✅ Ativado neste aparelho. Chegam mesmo com o app fechado.</p>
+          ${common}
           <div class="row gap" style="margin-top:10px">
             <button class="btn soft" data-action="push-test">Enviar teste</button>
             <button class="btn ghost danger-text" data-action="push-off">Desativar</button>
           </div>`;
       } else {
         inner = `
-          <p class="muted small">Um lembrete gentil de manhã, outro para fechar o dia, um aviso antes do seu horário de risco e um "como foi?" depois que você começa algo.</p>
-          <button class="btn primary block" data-action="push-on" style="margin-top:10px">Ativar lembretes neste aparelho</button>`;
+          <p class="muted small">Lembretes que chegam <b>mesmo com o app fechado</b>: bom dia, fechar o dia, horário de cada hábito, sequência em risco, horário de risco e "como foi?".</p>
+          <button class="btn primary block" data-action="push-on" style="margin-top:10px">🔔 Ativar lembretes neste aparelho</button>`;
       }
-      return `<div class="card"><h3>🔔 Lembretes</h3>${inner}</div>`;
+      const local = N.granted();
+      return `
+        <div class="card" id="remCard"><h3>🔔 Lembretes e notificações</h3>${inner}
+          <div class="sub-card">
+            <label class="switch-row"><span>⏰ Alarmes com o app aberto <small class="muted">(fim do foco, timer anti-coçar, meditação)</small></span><input type="checkbox" id="localNotifToggle" ${local ? 'checked disabled' : ''}></label>
+            ${local ? '<button class="link-btn" data-action="local-test">Testar alarme deste aparelho</button>' : ''}
+          </div>
+        </div>`;
     }
   };
 

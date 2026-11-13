@@ -21,6 +21,16 @@ webpush.setVapidDetails(
 
 type Msg = { key: string; title: string; body: string; tag: string };
 
+function dowOf(date: string) {
+  const [y, m, d] = date.split("-").map(Number);
+  return ((new Date(Date.UTC(y, m - 1, d)).getUTCDay() + 6) % 7) + 1; // 1=seg … 7=dom
+}
+function addDays(date: string, n: number) {
+  const [y, m, d] = date.split("-").map(Number);
+  const t = new Date(Date.UTC(y, m - 1, d + n));
+  return t.toISOString().slice(0, 10);
+}
+
 function localNow(tz: string) {
   const parts = Object.fromEntries(
     new Intl.DateTimeFormat("en-CA", {
@@ -118,6 +128,62 @@ Deno.serve(async (req) => {
       }
     }
 
+    // Lembrete de cada hábito (horário definido no app) e "sequência em risco"
+    if (r.habits !== false || r.streak !== false) {
+      const { data: habits } = await sb.from("habits")
+        .select("id, name, icon, remind_at, days, daily_goal, archived")
+        .eq("user_id", p.id).eq("archived", false);
+      const { data: logs } = await sb.from("habit_logs")
+        .select("habit_id, date, amount")
+        .eq("user_id", p.id).gte("date", addDays(now.date, -2));
+      const goal = new Map((habits ?? []).map((h) => [h.id, Math.max(1, h.daily_goal ?? 1)]));
+      const doneOn = (hid: string, date: string) =>
+        (logs ?? []).some((l) => l.habit_id === hid && l.date === date && (l.amount ?? 1) >= (goal.get(hid) ?? 1));
+      const dow = dowOf(now.date);
+
+      if (r.habits !== false) {
+        for (const h of habits ?? []) {
+          if (!h.remind_at) continue;
+          if (h.days && h.days.length && !h.days.includes(dow)) continue;
+          if (doneOn(h.id, now.date)) continue;
+          const key = "h:" + h.id;
+          if (!due(key, toMin(h.remind_at))) continue;
+          msgs.push({
+            key, tag: "raiz-h-" + h.id,
+            title: r.showNames ? `${h.icon ?? "⏰"} ${h.name}` : "Hora do seu hábito ⏰",
+            body: "Um passo pequeno agora. Bora?",
+          });
+        }
+      }
+
+      if (r.streak !== false) {
+        const anyToday = (habits ?? []).some((h) => doneOn(h.id, now.date));
+        const anyYesterday = (habits ?? []).some((h) => doneOn(h.id, addDays(now.date, -1)));
+        if (!anyToday && anyYesterday && due("streak", toMin(r.streakAt || "20:30"))) {
+          msgs.push({ key: "streak", tag: "raiz-streak", title: "🔥 Sua sequência está em risco", body: "Faça 1 hábito hoje para não perder seus dias seguidos." });
+        }
+      }
+    }
+
+    // Treino anti-coçar: modo noite (aviso de início + checagens "como estão suas mãos?")
+    const hn = r.hrtNight;
+    if (hn && hn.on) {
+      const from = toMin(hn.from), to = toMin(hn.to);
+      const inWin = from !== null && to !== null && (from <= to ? now.min >= from && now.min < to : now.min >= from || now.min < to);
+      if (inWin) {
+        if (due("hrtStart", from)) {
+          msgs.push({ key: "hrtStart", tag: "raiz-hrt-night", title: "🌙 Começou seu horário de atenção", body: "Deixe as mãos ocupadas. Se vier a vontade: mãos nas coxas por 1 minuto." });
+          done.hrtLast = new Date().toISOString();
+        } else {
+          const last = done.hrtLast ? new Date(done.hrtLast).getTime() : 0;
+          if (Date.now() - last >= Math.max(15, Number(hn.every) || 30) * 60000) {
+            msgs.push({ key: "hrtCheck", tag: "raiz-hrt-remind", title: "✋ Como estão suas mãos?", body: "Repare no corpo por 3 segundos. Vontade não é ordem." });
+            done.hrtLast = new Date().toISOString();
+          }
+        }
+      }
+    }
+
     let clearFocus = false;
     if (r.focus !== false && p.focus_reminder_at && new Date(p.focus_reminder_at) <= new Date()) {
       msgs.push({ key: "focus", tag: "raiz-focus", title: "Voltou? 🤍", body: "Me conta como foi. Qualquer resposta vale." });
@@ -128,7 +194,11 @@ Deno.serve(async (req) => {
 
     for (const m of msgs) {
       sent += await sendTo(sb, p.id, { title: m.title, body: m.body, tag: m.tag, url: APP_URL });
-      if (m.key !== "focus") done[m.key] = now.date;
+      if (m.key !== "focus" && m.key !== "hrtCheck") done[m.key] = now.date;
+    }
+    // limpa marcas antigas de lembretes de hábitos
+    for (const k of Object.keys(done)) {
+      if (k.startsWith("h:") && done[k] !== now.date) delete done[k];
     }
 
     const patch: Record<string, unknown> = { reminders_sent: done };

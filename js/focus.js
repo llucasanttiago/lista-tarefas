@@ -2,8 +2,6 @@
 // e acolhe o resultado quando você volta (consegui / um pouco / não deu).
 (function () {
   const KEY = 'raiz-focus';
-  // Hábitos que não se "começam", se confirmam no fim do dia (evitar, manter, não fazer…)
-  const PASSIVE = /evit|n[ãa]o obedec|mantive|^sem\s|dorm|^n[ãa]o\s/i;
   const MED = /medit|mindful/i;
   const JOUR = /escrita|di[áa]rio|journal/i;
   const WHY = [
@@ -31,7 +29,7 @@
       if (v) U.store.set(KEY, JSON.stringify(v));
       else { try { localStorage.removeItem(KEY); } catch { /* ignore */ } }
     },
-    isPassive(h) { return PASSIVE.test(h.name); },
+    isPassive(h) { return G.isAvoid(h); },
     why(h) { const w = WHY.find(([re]) => re.test(h.name)); return w ? w[1] : GENERIC; },
     minutes(h) { const m = h.name.match(/(\d+)\s*min/i); return m ? +m[1] : null; },
 
@@ -45,6 +43,9 @@
         if (hr < 12 && /medit|mindful|camin|exerc|trein|sol|along/i.test(h.name)) s += 2;
         if (hr >= 18 && /escrita|di[áa]rio|ler\b|leitura|gratid/i.test(h.name)) s += 2;
         if (G.weekCount(h.id, t) < h.target_per_week * dayIdx / 7) s += 1;
+        const tod = h.time_of_day;
+        if (tod) s += (tod === 'manha' && hr < 12) || (tod === 'tarde' && hr >= 12 && hr < 18) || (tod === 'noite' && hr >= 18) ? 3 : -2;
+        if (h.remind_at && Math.abs(U.toMin(h.remind_at) - U.minutesNow()) < 60) s += 3;
         return s;
       };
       return G.visibleHabits()
@@ -152,9 +153,10 @@
       }).catch(e => console.warn('focus_sessions:', e.message || e));
 
       if (outcome === 'done' || outcome === 'partial') {
-        if (!G.isDone(h.id, U.today())) await App.toggleHabit(h.id, null, true);
+        if (!G.isDone(h.id, U.today())) await App.completeHabit(h.id, null, true);
         const streak = G.streak();
         if (outcome === 'done') {
+          G.flag('focusDone');
           U.play('achievement'); U.vibrate([30, 40, 30]);
           U.confetti({ particleCount: 160, spread: 100, origin: { y: 0.5 } });
           body.innerHTML = `
@@ -230,7 +232,7 @@
           U.play('done'); U.vibrate(15);
           U.floatXp(b, G.XP.habit);
           row.querySelector('.rv-msg').textContent = 'Boa! Isso é autocontrole de verdade. 💪';
-          await App.toggleHabit(row.dataset.id, null, true);
+          await App.completeHabit(row.dataset.id, null, true);
         } else {
           row.querySelector('.rv-msg').textContent = 'Tudo bem. Amanhã é uma nova chance. 🤍';
         }

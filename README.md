@@ -3,6 +3,20 @@
 App pessoal para criar hábitos saudáveis, controlar impulsos e acalmar a ansiedade.
 Os dados ficam salvos no Supabase, com login e senha. Funciona no PC e no celular e pode ser instalado como app.
 
+## Novidades da versão 5
+
+- **✋ Treino anti-coçar (HRT · Resposta Concorrente)**: botão ✋ sempre à mão. Fluxo em 3 passos: perceber a vontade → mãos nas coxas por 1 minuto (o timer fica no topo enquanto você continua o que estava fazendo) → registrar como foi (não cocei / interrompi / cocei), onde e em que situação. Tem a frase para memorizar, simulações com ensaio de verdade, lembretes de atenção, estatísticas (percebidas, % sem coçar, pegas no início, áreas e situações) e conquistas próprias.
+- **Sons de verdade**: notas que sobem a cada hábito do dia, combo, moedas, baús, fanfarra de nível, sino de meditação, respiração guiada com som, e **sons ambientes** (chuva, mar, ruído marrom, lareira, floresta). Volume ajustável.
+- **Notificações**: lembrete por hábito (com horário), "sequência em risco", alarmes do timer de foco, da meditação e do anti-coçar, e opção de mostrar o nome do hábito.
+- **Viciante**: moedas 💰, 3 missões por dia, baús com raridade (comum, raro, épico, lendário), presente diário, combo, dia perfeito, loja (protetores e temas de cor), "você vs. semana passada" e 23 conquistas novas.
+- **Flexível**: hábitos com dias da semana, período (manhã/tarde/noite), quantidade por dia (ex.: 8 copos), tipo fazer/evitar, cor e lembrete. Marcar dias passados (até 14 dias), detalhes de cada hábito, tarefas com prioridade (`!` no começo), data, anotação e "desfazer".
+- **Foco profundo** (pomodoro) com som ambiente e alarme.
+- **Profissional**: tema claro/escuro/automático, 6 cores, aviso de sem internet, atalhos de teclado (`?` mostra a lista) e exportação em planilha.
+
+### Atualizar para a versão 5
+1. **SQL Editor** do Supabase → cole todo o [`supabase/schema.sql`](supabase/schema.sql) → **Run**. Ele só adiciona colunas e não apaga nada. Antes disso o app funciona, mas moedas e missões ficam só no aparelho e os campos novos dos hábitos ficam escondidos.
+2. **Edge Functions → lembretes** → cole o novo [`index.ts`](supabase/functions/lembretes/index.ts) → **Deploy** (para os lembretes de cada hábito e "sequência em risco" com o app fechado).
+
 ## O que tem
 
 - **Tela inicial focada**: mostra só UMA sugestão do que fazer agora. Você toca em "Começar", recebe uma mensagem para focar e, ao voltar, conta como foi (consegui / fiz só um pouco / não deu). Toda resposta é recebida com acolhimento
@@ -81,9 +95,12 @@ As chaves ficam no arquivo local `.secrets/lembretes.txt`, que **não** vai para
 index.html            telas e navegação
 css/style.css         visual
 js/config.js          chaves do Supabase
-js/utils.js           datas, sons, toasts, modais
+js/sound.js           motor de som e sons ambientes
+js/utils.js           datas, toasts, modais
+js/notify.js          notificações e alarmes locais
+js/hrt.js             treino anti-coçar (resposta concorrente)
 js/data.js            acesso ao banco e estado
-js/gamification.js    XP, níveis, sequência, protetores, conquistas
+js/gamification.js    XP, moedas, níveis, sequência, missões, baús, loja, conquistas
 js/exercises.js       impulso, respiração, meditação, aterramento
 js/views.js           telas (Hoje, Meditar, Progresso, Conquistas, Perfil)
 js/app.js             login, ações e inicialização
