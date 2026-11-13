@@ -87,7 +87,30 @@ Deno.serve(async (req) => {
   const URL_ = Deno.env.get("SUPABASE_URL")!;
   const custom = (Deno.env.get("SERVICE_KEY") ?? "").trim();
   const ADMIN_KEY = custom || (Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "").trim();
-  const sb = createClient(URL_, ADMIN_KEY, { auth: { persistSession: false } });
+  // Testa a chave de administrador de dois jeitos (com e sem "Authorization: Bearer"),
+  // porque as chaves novas (sb_secret_) nem sempre aceitam o formato antigo.
+  const probe = async (withBearer: boolean) => {
+    const headers: Record<string, string> = { apikey: ADMIN_KEY };
+    if (withBearer) headers.Authorization = `Bearer ${ADMIN_KEY}`;
+    try {
+      const r = await fetch(`${URL_}/rest/v1/profiles?select=id&limit=1`, { headers });
+      const body = (await r.text()).slice(0, 180);
+      return { ok: r.ok && body.startsWith("[") && body !== "[]", status: r.status, body };
+    } catch (e) { return { ok: false, status: 0, body: String(e).slice(0, 180) }; }
+  };
+  const pBearer = await probe(true);
+  const pNoBearer = pBearer.ok ? null : await probe(false);
+  const stripAuth = !pBearer.ok && !!pNoBearer?.ok;
+  const adminFetch: typeof fetch = (input, init) => {
+    if (!stripAuth) return fetch(input, init);
+    const h = new Headers(init?.headers);
+    if ((h.get("Authorization") ?? "") === `Bearer ${ADMIN_KEY}`) h.delete("Authorization");
+    return fetch(input, { ...init, headers: h });
+  };
+  const sb = createClient(URL_, ADMIN_KEY, { auth: { persistSession: false }, global: { fetch: adminFetch } });
+  const adminWorks = pBearer.ok || !!pNoBearer?.ok;
+  const adminDiag = adminWorks ? null
+    : `com Bearer: ${pBearer.status} ${pBearer.body} · sem Bearer: ${pNoBearer?.status} ${pNoBearer?.body}`;
   // tipo da chave em uso (sem revelar a chave): ajuda no diagnóstico
   const keyKind = ADMIN_KEY.startsWith("sb_secret_") ? "secret (sb_secret_)"
     : ADMIN_KEY.startsWith("sb_publishable_") ? "publishable (errada: é a pública)"
@@ -103,8 +126,7 @@ Deno.serve(async (req) => {
     if (!data?.user) return new Response("forbidden", { status: 403, headers: CORS });
     const { count, error: cErr } = await me.from("push_subscriptions").select("id", { count: "exact", head: true }).eq("user_id", data.user.id);
     // confere se a chave de administrador (usada pelos lembretes agendados) funciona
-    const { count: aCount, error: aErr0 } = await sb.from("profiles").select("id", { count: "exact", head: true }).eq("id", data.user.id);
-    const aErr = aErr0 ?? (aCount ? null : { message: "a chave não tem acesso de administrador (não enxerga os perfis)" });
+    const aErr = adminWorks ? null : { message: adminDiag ?? "" };
     const errors: SendErr[] = [];
     const n = await sendTo(me, data.user.id, {
       title: "Teste 🌱", body: "Seus lembretes estão funcionando.", tag: "raiz-test", url: APP_URL,
@@ -112,7 +134,7 @@ Deno.serve(async (req) => {
     return Response.json({
       ok: true, sent: n, subs: count ?? 0, subsError: cErr?.message ?? null, errors,
       adminOk: !aErr, adminError: aErr?.message ?? null, adminKey: custom ? "SERVICE_KEY" : "SUPABASE_SERVICE_ROLE_KEY", keyKind,
-      version: 9,
+      version: 10, adminMode: stripAuth ? "sem Bearer" : "com Bearer",
     }, { headers: CORS });
   }
 

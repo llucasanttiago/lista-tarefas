@@ -1,6 +1,6 @@
 // Service worker: deixa o app instalável e abrindo rápido.
 // Estratégia "rede primeiro": sempre pega a versão nova; usa o cache só offline.
-const CACHE = 'raiz-v10';
+const CACHE = 'raiz-v11';
 const SHELL = [
   './', './index.html', './css/style.css', './manifest.webmanifest', './icons/icon.svg',
   './js/config.js', './js/sound.js', './js/utils.js', './js/gamification.js', './js/data.js', './js/notify.js',

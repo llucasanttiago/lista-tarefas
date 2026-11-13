@@ -447,6 +447,8 @@
         const a = step('Lembretes agendados (app fechado)');
         if (data.adminOk) { a(true, 'O servidor consegue ler seus horários.'); return true; }
         a(false, `A chave de administrador da função não funciona.<br>Usando: <b>${U.esc(data.adminKey || '?')}</b> · tipo: <b>${U.esc(data.keyKind || '? (função antiga: publique de novo)')}</b><br>Erro: ${U.esc(data.adminError || '')}`);
+        if (/permission denied|42501/i.test(data.adminError || '')) return fail('A chave funciona, mas o administrador não tem <b>permissão nas tabelas</b>. No Supabase → <b>SQL Editor</b>, rode:<br><code>grant usage on schema public to service_role;<br>grant all on all tables in schema public to service_role;</code><br>e toque em Enviar teste de novo.'), false;
+        if (/401|Invalid API key|Unregistered API key/i.test(data.adminError || '')) return fail('O Supabase <b>recusou a chave</b> no <code>SERVICE_KEY</code>. Copie de novo a chave da seção <b>Secret keys</b> (o botão de copiar ao lado dela, com a chave inteira), cole no segredo e publique a função de novo.'), false;
         if (data.adminKey === 'SUPABASE_SERVICE_ROLE_KEY' && data.keyKind) return fail('A função ainda <b>não está lendo o SERVICE_KEY</b>. Confira se o nome do segredo é exatamente <code>SERVICE_KEY</code> (maiúsculas, sem espaço) e clique em <b>Deploy</b> na função de novo para ela ler o segredo novo.'), false;
         if (data.keyKind && data.keyKind.startsWith('publishable')) return fail('O <code>SERVICE_KEY</code> está com a chave <b>pública</b> (sb_publishable_). Troque pela chave da seção <b>Secret keys</b> (começa com <code>sb_secret_</code>).'), false;
         fail(`Os lembretes automáticos não conseguem ler o banco. Para corrigir (uma vez só):<br>

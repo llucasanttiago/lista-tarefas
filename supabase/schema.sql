@@ -244,4 +244,7 @@ begin
 end $$;
 
 grant select, insert, update, delete on all tables in schema public to authenticated;
+-- a função de lembretes (chave de administrador) precisa ler e atualizar tudo
+grant usage on schema public to service_role;
+grant all on all tables in schema public to service_role;
 revoke all on all tables in schema public from anon;
